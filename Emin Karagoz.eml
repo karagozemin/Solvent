@@ -1,0 +1,116 @@
+Delivered-To: eminkaragoz07@gmail.com
+Received: by 2002:a05:7022:ef14:b0:13b:3cc3:4fd0 with SMTP id qy20csp275170dlb;
+        Wed, 1 Jul 2026 15:36:08 -0700 (PDT)
+X-Received: by 2002:ac2:4bd4:0:b0:5ae:b62d:3205 with SMTP id 2adb3069b0e04-5aec6793a00mr1043650e87.14.1782945367881;
+        Wed, 01 Jul 2026 15:36:07 -0700 (PDT)
+ARC-Seal: i=2; a=rsa-sha256; t=1782945367; cv=pass;
+        d=google.com; s=arc-20260327;
+        b=C9elnWsWrWTzWDsNEvcsypWEf/iHvlAnXgzpEv4fKMfJkc3ijPOBeGdHv/Y6BwUeQZ
+         iCmecIJFtzaeYRNvvbpX4oW2ZC+LETCrGF7R26hkJZ8Lmo2oTRRaBJMfSueMiJmdpvmg
+         VS1cnag16le1+wglP/6AesmfmYz/FPBPs3iqgD5lOet/fdPdAKLEHuvUbPOdPDn45aV0
+         x3TVFW0Z25IP0SHuPvoKtODE4CKJhTvRhUZW3aJL1Eokc8ioIpGFATZ7pl8bORcoF5KT
+         8qjyWxWepDwzsiwVHd4ufv6XM6KvMGd6ZerttfSucw93WlRXOBcBkJLdLGzvIYE3SGc1
+         F+ug==
+ARC-Message-Signature: i=2; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20260327;
+        h=to:subject:message-id:date:from:mime-version:dkim-signature;
+        bh=wYmFWT8kWhWvPrcodrGYYmAnsksj0FcVoLLOzU4SYYM=;
+        fh=IvBHTEmWX9bLi4OMv8WfOAibBtT2qkCxlQ/X346W5WI=;
+        b=CnwwwNuTx9Gi4A3tjRtYmrBFCfWptXheD6hCCSBVVe6X9Su+VhIWbSYZE8pc13vGBD
+         wHX7UuYV7gV05RqgHxI8RbsCle+b0KOZ2jPnExcngr9/ESmctFPjirwDRVfF29FLtjuJ
+         WWh6BX9CSq1Zx3ENeLdS24fPEmqIMvNktB7FvIgCEHlbIM49BFX9lTnse6aZCfGP+Tub
+         16Uvy/EL0LCmkqJuSrTPMxLCTn+3vfWgWBVBmGt2aYDT8ewczDFYUutmJHTh99/1Lbwl
+         h17aT/OCZxFj9t0pmNftUdOI3Yf7Ks8Iu0Sbe+dOC7+Onj0boQmCK7wKw2t/qj+wOWdD
+         uH/A==;
+        dara=google.com
+ARC-Authentication-Results: i=2; mx.google.com;
+       dkim=pass header.i=@gmail.com header.s=20251104 header.b=Vux+oo5n;
+       arc=pass (i=1);
+       spf=pass (google.com: domain of crazyyyidea@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=crazyyyidea@gmail.com;
+       dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com;
+       dara=pass header.i=@gmail.com
+Return-Path: <crazyyyidea@gmail.com>
+Received: from mail-sor-f41.google.com (mail-sor-f41.google.com. [209.85.220.41])
+        by mx.google.com with SMTPS id 2adb3069b0e04-5aec89dc21esor162654e87.10.2026.07.01.15.36.07
+        for <eminkaragoz07@gmail.com>
+        (Google Transport Security);
+        Wed, 01 Jul 2026 15:36:07 -0700 (PDT)
+Received-SPF: pass (google.com: domain of crazyyyidea@gmail.com designates 209.85.220.41 as permitted sender) client-ip=209.85.220.41;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@gmail.com header.s=20251104 header.b=Vux+oo5n;
+       arc=pass (i=1);
+       spf=pass (google.com: domain of crazyyyidea@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=crazyyyidea@gmail.com;
+       dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com;
+       dara=pass header.i=@gmail.com
+ARC-Seal: i=1; a=rsa-sha256; t=1782945367; cv=none;
+        d=google.com; s=arc-20260327;
+        b=Sds5QPaCrrB1WOnmCT2ZxVpGRzXq2qwzfRe0qm7pglvDHsAcu9pGy9YA3qcdMJsyQO
+         m8z17pWSjXoUpjXXpwUmE/sBAlS6wVGt/qOghWYQJzr8BNdrBI+dH1yoe7KTzveMc8eP
+         Zl6XcsLVhmkK5+67GD23K69I5Wm5WbfVqoz9Dld2UGwID1I/KN5sDqbPYl6pJrJ7B9g6
+         aSJrkfJLaa30OOMVhAks2WpsJ1/ZOvDq76hr8RWdaaFAzA6UKr6ko6RUl28BqgxrOpsL
+         kJ74ZW91b+NT91Iyg3d6xRhupI0aqRi9qmV+BEU2YvvGExxvlbMA3tMUuwgjkhgEvKZM
+         TQFA==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20260327;
+        h=to:subject:message-id:date:from:mime-version:dkim-signature;
+        bh=wYmFWT8kWhWvPrcodrGYYmAnsksj0FcVoLLOzU4SYYM=;
+        fh=IvBHTEmWX9bLi4OMv8WfOAibBtT2qkCxlQ/X346W5WI=;
+        b=lETVooSxMHUEz2/3EbaetJa3OEvsrYtwzV8RNQeQngtqsymNvxvC1wpzEH7688+GDa
+         nQs4ohqBEDNHEHIY5PApiiEqNlyzVk5m1zMcWZfctU6uNRcKn4ytt2S5xhI3icwFnq+v
+         249t19jg/+U5lVVx2cpzFsiAPDvHf2JQbfkoN71poFyIisl35lgJmCw1iFfM8efXb3gO
+         +rI82awR4uqZ9KpC1IToi4MhOo4r1QIuQ87VTYBIOEgUcMTyoe522ZAQyox7V+BBbyem
+         mOHVLxYuOIqcZtykG5E2Rn/ITciskbUx12Q79EO9BVtCiSphy2ZXXMWz/u0mGE1Yp3X2
+         6f8A==;
+        dara=google.com
+ARC-Authentication-Results: i=1; mx.google.com; arc=none
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20251104; t=1782945367; x=1783550167; dara=google.com;
+        h=to:subject:message-id:date:from:mime-version:from:to:cc:subject
+         :date:message-id:reply-to;
+        bh=wYmFWT8kWhWvPrcodrGYYmAnsksj0FcVoLLOzU4SYYM=;
+        b=Vux+oo5nM5p/QK0WZzPyeQ4fHjOOXobjxherJu9LEFKFA1iwptFSkmmrK+3BaAwo7i
+         AMMLW6FXbWVck/e73doNmxtzUUsjIAtXEFRlePq2t1Ta6LYs0OCxksrk2wbVKT5a/XIc
+         yRrTqOmUGm80u/mHxDJmogXix6DYKi9UAuUv41FJXI6sH2A4DkTtCnkE4tLiJXc/Q3Av
+         vey4GKRmmXTtv8LgCbNywr8AnQKWek5tqevITwu4BH9bOzXQWpO2t0GjLwDmNcI9TEUW
+         4Avn0RHb6Do/5K1a1wtWf5tBA9+rupqkI6vyLFZBmGkjPnKIYi3xymUxeKXVkK3AzkTe
+         KaOw==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=1e100.net; s=20251104; t=1782945367; x=1783550167;
+        h=to:subject:message-id:date:from:mime-version:x-gm-gg
+         :x-gm-message-state:from:to:cc:subject:date:message-id:reply-to;
+        bh=wYmFWT8kWhWvPrcodrGYYmAnsksj0FcVoLLOzU4SYYM=;
+        b=Dl8ElQV5gpU89HQR5V41xUROgpGaU8hVYFM5c/2BsYB7KI4tZ/ICh+7xlMcNaVZ0um
+         /80oGpDTzMTN+mg7MdTXEMcg5yOuCJM2J1gS68S6+jHRU/j9DAFveg9PwtacAb2hp6Zv
+         Eg34rIPdbLnsdEBlhycnriaJcJqBDsYU5BYPblhU28oZnMe8shsyLtnisUAgF/XilCDm
+         N9xpUvddYoLZWMAzo61WWk/0CykKvIx5V8TF4LT/0EjoOghmRNMaF620LwMMRL9c+S/t
+         TOPsDd7kfdmoslbzr675Pe3PbTyr0PINrExkML8XkHOxh3GmbaFwDjNmbLcbQGU/W27B
+         W/Pg==
+X-Gm-Message-State: AOJu0YzGmXDjNhPyzOrHFNUUDEeBr5pgp88YEipZaYP/tAwy20g0i3/y
+	7Ltr+aOXsZ9cMYZ3lOcAqWFgiF0EIy0MYC3bXSGAGXpOAN8IUla2mymcevDQmYN/IJy2Tf7jNWW
+	o0w5DuuB4VjhStYpUupL7L4iLwEubPDk6Og==
+X-Gm-Gg: AfdE7clGIee0JdAYzu1sxmHNKhcJtKW1KsPyxkmr7j+UYvGYtsK1P4jAnslaTFsDGdb
+	Ovqmu6xFNW4jAY+qMX/5QB/nSe9ACdKuaJEtvArLjYM9Lo6qFXFhIXHnWPWdFBlGAWkoi0VvJK2
+	ewO1mi+EByV7wj7RhfMtn9xN8QkTeIjYh4AiqPx9ufvXI89mWW3Dlpah0cBzHNWJp7r/6KYlRxF
+	KR7SI6AvVluu18mEQFXgN+qvn6JY85EvYTSqvaGW49Sr57AP7dN687t+7+bDgipYdgyXnZQ94kw
+	2PJHVJXoEflK1sPNqeg0gpyRiq18+oM=
+X-Received: by 2002:a05:6512:131e:b0:5ae:b9ff:7f0c with SMTP id
+ 2adb3069b0e04-5aec67b924cmr853916e87.34.1782945367036; Wed, 01 Jul 2026
+ 15:36:07 -0700 (PDT)
+MIME-Version: 1.0
+From: =?UTF-8?B?Q3JhenkgxLBkZWFz?= <crazyyyidea@gmail.com>
+Date: Thu, 2 Jul 2026 01:35:55 +0300
+X-Gm-Features: AVVi8CfBnDYk-d2EmxPj8pqq4zJ7LwaVJHeR7ToBjsw7NMZ0PFD1Is_rxfu3k0Y
+Message-ID: <CAFj5AbA7EPDQ6zf4CMPrMAaYARV-NdMrK77WZM3Eo_C=TsRFAg@mail.gmail.com>
+Subject: Emin Karagoz
+To: "eminkaragoz07@gmail.com" <eminkaragoz07@gmail.com>
+Content-Type: multipart/alternative; boundary="0000000000004198f40655945146"
+
+--0000000000004198f40655945146
+Content-Type: text/plain; charset="UTF-8"
+
+Web3 Developer
+
+--0000000000004198f40655945146
+Content-Type: text/html; charset="UTF-8"
+
+<div dir="ltr">Web3 Developer</div>
+
+--0000000000004198f40655945146--

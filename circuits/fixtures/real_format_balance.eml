@@ -1,0 +1,21 @@
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=bank.example.com; s=solvent; t=1782885600; bh=AWblSDpM9sTm/qibRKo5wmliyZ9RNGqbszEGcoZMp0A=; h=from:to:subject:date:message-id; b=fUrra6k9GxY763nT/9TYVpeDan8wE5Cl9T/NH0stUfhWOIzw9qTYtqV0URXHUvNPSNmAeUuy3MrULItS7qP66UW+pb4DEWlZtRGMx92Jsd/GITSzNencTAkO78iuUDt86JOyBmOFn3+I4q4JIU3yY6D1K7M5RH+kJ1u/c8Bgzogjxu4Wscpfhft+HjseZ4NEMQfPAfqS+/SvLlPJoHi/GMt0brIaM4IqGLAawkyPyAV0+emtIkjjuB1KjWJMMOluu0AqoNKgWQYkQjVqlGtwx/GfftVYkCZG76GVkNEjSNPO8fxB3WrYlpkAP8BVLFdmfrLyb01R65GfeO6ze0Mo+w==
+From: Example Bank Alerts <no-reply@bank.example.com>
+To: Treasury Ops <treasury@solvent-issuer.example>
+Subject: Daily Reserve Statement — Account ****4821
+Date: Wed, 01 Jul 2026 06:00:00 +0000
+Message-ID: <stmt.4821.20260701T0600Z.a1b2c3@bank.example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+
+Dear Treasury Operations Team,
+
+This is your automated daily reserve statement for settlement account
+ending 4821 held at Example Bank, N.A.
+
+Statement date: 2026-07-01
+Account holder: Solvent Issuer LLC
+Available balance: $1500000
+Ledger balance: $1500000
+
+This message is cryptographically signed (DKIM) by the sending domain.
+Do not reply.

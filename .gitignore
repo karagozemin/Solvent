@@ -1,0 +1,48 @@
+# ---- Node ----
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ---- Circuit build artifacts (regenerable via build.sh) ----
+circuits/build/*.r1cs
+circuits/build/*.wasm
+circuits/build/*.sym
+circuits/build/*.zkey
+circuits/build/*_js/
+circuits/build/*.wtns
+circuits/build/witness.wtns
+circuits/build/reserve_js/
+circuits/build/ptau_download.log
+
+# ---- Powers of Tau (large, downloaded not committed) ----
+*.ptau
+
+# ---- Keep these generated-but-small artifacts committed intentionally ----
+# (negate the build/* ignores above for files we DO want in git)
+!circuits/build/poseidon_t2_constants.json
+!circuits/build/poseidon_t2_constants.rs
+!circuits/build/poseidon_crosscheck_vectors.json
+!circuits/build/vkey_soroban.json
+!circuits/build/verification_key.json
+
+# ---- Rust / Soroban ----
+target/
+**/target/
+Cargo.lock
+.stellar/
+
+# ---- Secrets / keys ----
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+secrets/
+*_secret*
+
+# ---- OS / editor ----
+.DS_Store
+.vscode/
+.idea/
+*.swp

@@ -1,0 +1,14 @@
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=bank.example.com; s=solvent; t=1782897300; bh=X41l2h7FPuaej00Anps3ycf8fe1CcnNtJZfUDmRwYmA=; h=from:to:subject:date:message-id; b=J5rhcSGVub2Lb/voNow/P9U97r/dsmb2zqAmbWtgiPHg66REnvCnWrgei7c9S1lMdVHDsUQcsI7EgtKONFQJSVytbYhd1oYfNju7Km0FdDvBL8INF1lsQtsHoFGq6fzi1vVXM/8HyOixdez7sgiE7fF5rK8MDSs2zcQjYw7eljForuL0KvBHw+jS0PKU1nBuB+DOaS9z0ExjYnHigdnWF3dGDek/BBIxmYnZ2c4eDmTf+fLcSjUf87kjtg6IIrPLEtHfHdvEGmdDSAiGANvh+iKKbsa4GOBJMCcBewumODLuccfeLwWq+/dm/Yk46eZ50bEIkf132NAxUnD5GoJl8A==
+From: Bank Statements <statements@bank.example.com>
+To: Issuer <issuer@solvent.example>
+Subject: Your account balance
+Date: Wed, 01 Jul 2026 09:15:00 +0000
+Message-ID: <mock-0001.20260701@bank.example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+
+Hello,
+
+Available balance: $1000000
+
+Thank you for banking with us.

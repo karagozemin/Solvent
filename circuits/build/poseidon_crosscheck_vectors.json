@@ -1,0 +1,55 @@
+{
+  "note": "Shared Task-1 cross-check vectors. mint_guard unit test MUST reproduce every 'out' byte-for-byte using the host poseidon_permutation + locked constants.",
+  "poseidon_params": {
+    "field": "BN254",
+    "t": 2,
+    "d": 5,
+    "rounds_f": 8,
+    "rounds_p": 56
+  },
+  "single_input_hash": [
+    {
+      "input": "0",
+      "out": "0x2a09a9fd93c590c26b91effbb2499f07e8f7aa12e2b4940a3aed2411cb65e11c"
+    },
+    {
+      "input": "1",
+      "out": "0x29176100eaa962bdc1fe6c654d6a3c130e96a4d1168b33848b897dc502820133"
+    },
+    {
+      "input": "2",
+      "out": "0x131d73cf6b30079aca0dff6a561cd0ee50b540879abe379a25a06b24bde2bebd"
+    },
+    {
+      "input": "42",
+      "out": "0x1b408dafebeddf0871388399b1e53bd065fd70f18580be5cdde15d7eb2c52743"
+    },
+    {
+      "input": "12345678901234567890",
+      "out": "0x26ef6dd4cf0be9cb745e6a20d05e54766bcf592a4c963e76337cc9c0250c2855"
+    }
+  ],
+  "serialization": [
+    {
+      "name": "domain",
+      "bytes_utf8": "bank.example.com",
+      "fixed_len": 62,
+      "folded_field": "0x000000000000000000000000000000006d6f632e656c706d6178652e6b6e6162",
+      "poseidon_out": "0x1d1666357c98e0578ba9d7b191e6e3ceaeaad3204e5cab630985e98c0ad35a1c"
+    },
+    {
+      "name": "message_id",
+      "bytes_utf8": "<abc123.20260701.deadbeef@bank.example.com>",
+      "fixed_len": 128,
+      "folded_field": "0x28437a6b636fdef529de88447574c2a33a415a3d05e73332dfdbe3b37553423d",
+      "poseidon_out": "0x0cf3521c072980f9253b7e73c57f46fb4ee687be6af4a820a14d7c0066e50cdc"
+    }
+  ],
+  "attestation_chain": {
+    "prev_root": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "threshold": "1000000",
+    "digest": "0x28fbd2fa1ba15e43ebfc3f6cfc0979a4f81e258ef6392203090558ff73b58b55",
+    "folded_root_in": "0x019d7d8bbc4dd4d6c88cd1f753f6304e1861c8045807831b884235b0650ef249",
+    "new_root": "0x0fb8bb68436d55671f733421ec31c77494331569d5816d89399f043bab1c2be8"
+  }
+}
