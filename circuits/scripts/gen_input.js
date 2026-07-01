@@ -15,8 +15,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 
 // Circuit params — MUST match reserve.circom component main.
-const MAX_HEADERS = 1024;
-const MAX_BODY = 1536; // will be lowered in the size-reduction step
+const MAX_HEADERS = 640;
+const MAX_BODY = 384;
 const MAX_BAL_DIGITS = 20;
 const DOMAIN_BYTES = 62;
 const MSGID_BYTES = 128;
@@ -53,25 +53,12 @@ async function main() {
   if (!m) throw new Error("no digits after balance label");
   const balanceStr = m[0];
   const balanceVal = BigInt(balanceStr);
-
-  // balanceDigits: the ASCII digit bytes, right-padded to MAX_BAL_DIGITS.
-  // DigitBytesToInt expects the number left-aligned; we pad with '0' (0x30)?
-  // No — DigitBytesToInt(n) treats each byte as a digit and folds base-10.
-  // Leading zeros are harmless. We LEFT-pad with ASCII '0' so the value is
-  // preserved and length is fixed.
-  const digitBytes = Array.from(enc.encode(balanceStr));
-  const padCount = MAX_BAL_DIGITS - digitBytes.length;
-  if (padCount < 0) throw new Error("balance longer than MAX_BAL_DIGITS");
-  const balanceDigits = new Array(padCount).fill(48).concat(digitBytes); // 48='0'
-
-  // substring window for RevealSubstring: we reveal exactly the padded window
-  // that DigitBytesToInt will consume. To keep alignment we reveal the digits
-  // region; but RevealSubstring reveals from the body, which is NOT left-padded.
-  // So we reveal the real digits [digitsStart, +len] and the circuit compares
-  // against balanceDigits WITHOUT left pad. => We must NOT left-pad here.
-  // Re-do: right-pad with zeros to fixed length is wrong for base-10 too.
-  // Correct approach documented below.
   const balanceLength = balanceStr.length;
+  if (balanceLength > MAX_BAL_DIGITS) throw new Error("balance longer than MAX_BAL_DIGITS");
+
+  // NOTE: no prover-supplied digit bytes. The circuit derives the value from
+  // the VERIFIED body via RevealSubstring + DigitBytesToIntPadded. We only
+  // pass the start index and length (both range-checked in-circuit).
 
   // 3) from-domain bytes (from the From header). NOTE: this is prover-supplied
   //    for now (Task-1 A scope). Task B binds it to the verified header.
@@ -98,10 +85,9 @@ async function main() {
     precomputedSHA: ev.precomputedSHA,
     emailBody: ev.emailBody,
     emailBodyLength: ev.emailBodyLength,
-    // balance
+    // balance (offset/length only; value derived from verified body in-circuit)
     balanceStartIndex: digitsStart.toString(),
     balanceLength: balanceLength.toString(),
-    balanceDigits: balanceDigits.map(String),
     // domain + msgid
     fromDomain: fromDomainBytes.map(String),
     messageId: messageIdBytes.map(String),
