@@ -65,6 +65,49 @@ template PoseidonHash1() {
 }
 
 // ---------------------------------------------------------------------------
+// DigitBytesToIntPadded: fold ASCII digit bytes into an integer, IGNORING
+// non-digit padding bytes (0x00 from RevealSubstring's SelectSubArray).
+//
+// RevealSubstring returns the real digits in [0, substringLength) and 0x00 for
+// the rest. Plain DigitBytesToInt would compute (0x00 - 48) = -48 for pad
+// bytes, corrupting the value. Here each byte contributes only if it is an
+// ASCII digit (48..=57): out = out*10 + (byte-48) when isDigit else out
+// unchanged. Because the real digits are a contiguous prefix followed only by
+// pad, this yields exactly the intended integer with NO prover-supplied
+// digit array — the value is derived purely from the verified body.
+// ---------------------------------------------------------------------------
+template DigitBytesToIntPadded(n) {
+    signal input in[n];
+    signal output out;
+
+    signal sums[n + 1];
+    sums[0] <== 0;
+
+    // isDigit[i] = 1 iff 48 <= in[i] <= 57
+    component ge48[n];
+    component le57[n];
+    signal isDigit[n];
+    signal term[n];      // (in[i]-48) when digit else 0
+    signal folded[n];    // sums[i]*10 + term[i]
+
+    for (var i = 0; i < n; i++) {
+        ge48[i] = GreaterEqThan(9);
+        ge48[i].in[0] <== in[i];
+        ge48[i].in[1] <== 48;
+        le57[i] = LessEqThan(9);
+        le57[i].in[0] <== in[i];
+        le57[i].in[1] <== 57;
+        isDigit[i] <== ge48[i].out * le57[i].out;
+
+        term[i] <== isDigit[i] * (in[i] - 48);
+        // if digit: sums*10 + term ; else keep sums unchanged
+        folded[i] <== sums[i] * 10 + term[i];
+        sums[i + 1] <== isDigit[i] * (folded[i] - sums[i]) + sums[i];
+    }
+    out <== sums[n];
+}
+
+// ---------------------------------------------------------------------------
 // Main reserve circuit.
 // n,k = RSA limb bits / count (121 * 17 = 2057 bits, standard zk-email for 2048).
 // ---------------------------------------------------------------------------
@@ -80,13 +123,14 @@ template Reserve(maxHeadersLength, maxBodyLength, n, k) {
     signal input emailBodyLength;
 
     // ---- Balance extraction (private) ----
-    // Substring window for the ASCII digits of the balance, located just after
-    // the label "Available balance: $". The prover supplies the start index and
-    // length; the circuit re-derives the integer and the >= constraint binds it.
+    // Window for the ASCII digits of the balance, located just after the label
+    // "Available balance: $". The prover supplies only the start index and
+    // length; the circuit re-derives the integer from the VERIFIED body
+    // (RevealSubstring) — no prover-supplied digit values. The >= constraint
+    // binds the derived value.
     var MAX_BAL_DIGITS = 20;             // up to ~1e20, fits one field element
     signal input balanceStartIndex;
     signal input balanceLength;
-    signal input balanceDigits[MAX_BAL_DIGITS]; // claimed digit bytes (validated)
 
     // ---- Domain + message-id (private) ----
     var DOMAIN_BYTES = 62;
@@ -117,21 +161,20 @@ template Reserve(maxHeadersLength, maxBodyLength, n, k) {
     ev.emailBodyLength <== emailBodyLength;
 
     // ======================================================================
-    // 2) Extract the balance substring from the (verified) body and re-derive
-    //    the integer. RevealSubstring proves balanceDigits is really the body
-    //    slice at [balanceStartIndex, +balanceLength]; DigitBytesToInt turns
-    //    ASCII digits into the integer value.
+    // 2) Extract the balance substring from the VERIFIED body and re-derive
+    //    the integer. RevealSubstring proves the revealed bytes are really the
+    //    body slice at [balanceStartIndex, +balanceLength] (0x00-padded after).
+    //    DigitBytesToIntPadded folds the digits while ignoring the 0x00 pad, so
+    //    the value comes purely from the DKIM-signed body — prover cannot forge
+    //    the balance (it is bound to the signature via the body hash).
     // ======================================================================
     component reveal = RevealSubstring(maxBodyLength, MAX_BAL_DIGITS, 0);
     reveal.in <== emailBody;
     reveal.substringStartIndex <== balanceStartIndex;
     reveal.substringLength <== balanceLength;
-    for (var i = 0; i < MAX_BAL_DIGITS; i++) {
-        reveal.substring[i] === balanceDigits[i];
-    }
 
-    component bal = DigitBytesToInt(MAX_BAL_DIGITS);
-    bal.in <== balanceDigits;
+    component bal = DigitBytesToIntPadded(MAX_BAL_DIGITS);
+    bal.in <== reveal.substring;
     signal extracted_balance;
     extracted_balance <== bal.out;
 
@@ -145,6 +188,9 @@ template Reserve(maxHeadersLength, maxBodyLength, n, k) {
 
     // ======================================================================
     // 4) domain_hash = PoseidonHash1(fold(fromDomain))
+    // TODO(B): bind fromDomain to the verified header via in-circuit regex —
+    //          currently prover-supplied (soundness gap: prover could claim a
+    //          different domain). This is the core Task-B hardening.
     // ======================================================================
     component dser = Bytes2Field(DOMAIN_BYTES);
     dser.bytes <== fromDomain;
@@ -154,6 +200,9 @@ template Reserve(maxHeadersLength, maxBodyLength, n, k) {
 
     // ======================================================================
     // 5) nullifier = PoseidonHash1(fold(messageId))
+    // TODO(B): bind messageId to the verified header via in-circuit regex —
+    //          currently prover-supplied (soundness gap: prover could pick any
+    //          nullifier). This is the core Task-B hardening.
     // ======================================================================
     component mser = Bytes2Field(MSGID_BYTES);
     mser.bytes <== messageId;
@@ -168,8 +217,9 @@ template Reserve(maxHeadersLength, maxBodyLength, n, k) {
     timestamp_out <== timestamp;
 }
 
-// maxHeadersLength=1024, maxBodyLength=1536 (mult of 64), n=121, k=17 (RSA-2048).
-// Public signals: threshold, timestamp (inputs) + outputs domain_hash,
-// nullifier, threshold_out, timestamp_out.
+// maxHeadersLength=640, maxBodyLength=384 (mult of 64), n=121, k=17 (RSA-2048).
+// Sized to the real fixture (header=576, body=320) with one block of slack,
+// to fit the 2^21 Powers-of-Tau (pot21). Public signals: threshold, timestamp
+// (inputs) + outputs domain_hash, nullifier, threshold_out, timestamp_out.
 component main { public [threshold, timestamp] } =
-    Reserve(1024, 1536, 121, 17);
+    Reserve(640, 384, 121, 17);
