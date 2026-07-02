@@ -30,7 +30,31 @@
 
 ---
 
+## What is Solvent?
+
+**Solvent is a zero-knowledge proof-of-reserves protocol on Stellar.** It lets
+anyone prove that a bank balance clears a threshold — *"my reserves are ≥ \$X"* —
+straight from a **real, DKIM-signed balance email**, and have a **Soroban smart
+contract verify that proof on-chain**. The exact amount is never revealed; only
+the fact that it clears the floor.
+
+The trick is that every balance email your bank sends is already **cryptographically
+signed** (DKIM, RSA-2048). Solvent verifies that signature *inside a zero-knowledge
+circuit*, proves `balance ≥ threshold` without exposing the balance, and lets
+Stellar's **native BN254 pairing** check the proof — producing a public, tamper-proof
+attestation that a reserve floor was met.
+
+In one line: **turn the bank's own email signature into a private, on-chain
+proof-of-reserves — no oracle, no custody, no disclosure of the amount.**
+
+- 🔒 **Private** — the balance stays on your machine; only the threshold is public.
+- ⛓️ **On-chain & live** — verified by a Soroban contract on Stellar testnet.
+- 🧾 **Trustless** — backed by the bank's real DKIM signature, not anyone's word.
+
+---
+
 ## The problem
+
 
 **Proof-of-reserves today is "trust me."** When an exchange, a fund, an OTC desk,
 or a borrower claims *"we hold at least \$X"*, the counterparty has two bad options:
