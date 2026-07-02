@@ -32,6 +32,37 @@ export const DEMO_ISSUER = {
 export const PROVE_TX =
   "32117d2f667119578b4f4e92214662aadb194d03dcd341f61935ad6be18b9c1b";
 
+// The full verifiable transaction chain (all live on testnet).
+export const TX_CHAIN = {
+  deploy: "fa4924c15d01bdd9431d92cd526e13934870fccb163aa5585b009a48abe0fcac",
+  init: "0ac17b23e0fb53310389400f4d59c3e1fd04aa2bc806c2991e1c2e69de1b3dee",
+  register: "5d6f7e45cacfc891337b95c00a7b1ce5e1c1c7a50c22f4df12d3ec5eaab6ed95",
+  prove: "32117d2f667119578b4f4e92214662aadb194d03dcd341f61935ad6be18b9c1b",
+};
+
+// Real data shown in the mechanism pipeline (nothing mocked).
+export const DKIM = {
+  domain: "gmail.com",
+  selector: "20251104",
+  algo: "rsa-sha256",
+  bodyHash: "T5PnfjryW7nkkxP/KoCf6pdM3bGZIiBNFmn2OMXytoo=",
+  signedHeaders: "from : to : subject : date : message-id",
+};
+
+// The actual Groth16 proof that was verified on-chain (BN254 field elements).
+export const PROOF = {
+  a: "20445263340791973997742966562676046831971497389422593618465585043795089754338",
+  b: "861666916801843749919408803809632526694142608510821279103415832611615431840",
+  c: "9787604844851213824238853139977758927197233479639010632643624376696141450621",
+};
+
+export const CIRCUIT = {
+  constraints: 1_692_844,
+  curve: "BN254",
+  system: "Groth16",
+  budgetLimit: 100_000_000, // Soroban per-tx instruction limit
+};
+
 export interface Attestation {
   threshold: bigint;
   timestamp: bigint;
