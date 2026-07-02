@@ -139,7 +139,13 @@ The contract test consumes an auto-generated fixture built from the real proof
 | On-chain `pairing_check = true` (native) | ✅ |
 | Soundness bindings (pubkey / sender / nullifier) | ✅ |
 | Issuer registry + attestation protocol | ✅ 8/8 tests |
-| WASM build + testnet deploy | 🚧 next |
+| **WASM build + testnet deploy** | ✅ **LIVE** |
+| On-chain `pairing_check` under 100M budget | ✅ verified on testnet |
+| Replay rejection + attestation, live | ✅ |
+
+**Live on Stellar testnet** — contract
+`CDPPM3EWAVVEE23LQVANCCRI4ERRBGJT4OUDTR46NRVDZFKAKDGYTDL5`. Verifiable tx chain
+(deploy / init / register / prove_reserve) in **[DEPLOYMENT.md](DEPLOYMENT.md)**.
 
 ---
 
