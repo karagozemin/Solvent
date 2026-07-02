@@ -186,33 +186,37 @@ export default function App() {
         </div>
         {walletErr && <p className="error connect-err">{walletErr}</p>}
 
-        <h1 className="headline">
-          Prove your reserves.
-          <br />
-          <span className="grad">Reveal nothing.</span>
-        </h1>
+        <div className="hero-main">
+          <div className="hero-left">
+            <h1 className="headline">
+              Prove your reserves.
+              <br />
+              <span className="grad">Reveal nothing.</span>
+            </h1>
 
-        <p className="lede">
-          Stablecoin issuers today either <em>expose</em> their bank balance or
-          say <em>“trust us.”</em> Solvent lets an issuer prove reserves clear a
-          threshold using a real DKIM-signed bank email — verified on-chain with
-          zero-knowledge. The balance is never disclosed.
-        </p>
+            <p className="lede">
+              Stablecoin issuers today either <em>expose</em> their bank balance
+              or say <em>“trust us.”</em> Solvent lets an issuer prove reserves
+              clear a threshold using a real DKIM-signed bank email — verified
+              on-chain with zero-knowledge. The balance is never disclosed.
+            </p>
 
-        <div className="cta">
-          <a className="btn primary" href={`${EXPLORER}/tx/${PROVE_TX}`} target="_blank" rel="noreferrer">
-            See it verified on-chain ↗
-          </a>
-          <a className="btn ghost" href={`${EXPLORER}/contract/${CONTRACT_ID}`} target="_blank" rel="noreferrer">
-            View live contract ↗
-          </a>
-        </div>
+            <div className="cta">
+              <a className="btn primary" href={`${EXPLORER}/tx/${PROVE_TX}`} target="_blank" rel="noreferrer">
+                See it verified on-chain ↗
+              </a>
+              <a className="btn ghost" href={`${EXPLORER}/contract/${CONTRACT_ID}`} target="_blank" rel="noreferrer">
+                View live contract ↗
+              </a>
+            </div>
+          </div>
 
-        <div className="statbar">
-          <div><b>1.69M</b><span>circuit constraints</span></div>
-          <div><b>&lt;100M</b><span>on-chain budget</span></div>
-          <div><b>BN254</b><span>native pairing</span></div>
-          <div><b>0</b><span>balance leaked</span></div>
+          <div className="statbar">
+            <div><b>1.69M</b><span>circuit constraints</span></div>
+            <div><b>&lt;100M</b><span>on-chain budget</span></div>
+            <div><b>BN254</b><span>native pairing</span></div>
+            <div><b>0</b><span>balance leaked</span></div>
+          </div>
         </div>
       </section>
 
@@ -406,20 +410,23 @@ export default function App() {
           {err && <p className="error">Could not read attestation: {err}</p>}
 
           {att && (
-            <>
-              <div className="reserve">
-                <span className="reserve-label">Reserve proven</span>
-                <span className="reserve-value">
-                  ≥ {formatUsd(BigInt(counted))}
-                  <span className="check">✓</span>
-                </span>
+            <div className="card-body">
+              <div className="card-col">
+                <div className="reserve">
+                  <span className="reserve-label">Reserve proven</span>
+                  <span className="reserve-value">
+                    ≥ {formatUsd(BigInt(counted))}
+                    <span className="check">✓</span>
+                  </span>
+                </div>
+
+                <div className="hidden-note">
+                  🔒 Actual balance <strong>never disclosed</strong> — only the
+                  threshold is proven in zero knowledge.
+                </div>
               </div>
 
-              <div className="hidden-note">
-                🔒 Actual balance <strong>never disclosed</strong> — only the
-                threshold is proven in zero knowledge.
-              </div>
-
+              <div className="card-col">
               <div className="facts">
                 <div><span>Proven on</span><b>{formatDate(att.timestamp)}</b></div>
                 <div><span>Signed by</span><b>Bank DKIM key (in-circuit)</b></div>
@@ -435,7 +442,8 @@ export default function App() {
                   Deploy tx ↗
                 </a>
               </div>
-            </>
+              </div>
+            </div>
           )}
         </div>
       </section>
