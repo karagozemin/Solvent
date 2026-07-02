@@ -103,18 +103,26 @@ How a claim goes from an inbox to an on-chain attestation, end to end. The
 only a proof and the 7-signal journal cross to the chain.
 
 ```
- ┌─────────────────────── OFF-CHAIN (prover, private) ───────────────────────┐   ┌────────── ON-CHAIN (public) ──────────┐
- │                                                                           │   │                                       │
- │  📧 .eml   ──▶  gen_input.js   ──▶  circom witness  ──▶  Groth16 prove    │   │   mint_guard.prove_reserve            │
- │  (DKIM-     parse header/body,    reserve.circom:      snarkjs → proof.json│   │   1. pairing_check(proof)  ✅          │
- │   signed)   RSA key, balance,     ① DKIM verify         + public.json      │──▶│   2. pubkey_hash == pinned gmail key  │
- │             threshold             ②④ balance≥threshold  (proof + journal)  │   │   3. sender_hash ∈ registry           │
- │                                   ⑤ sender_hash                            │   │   4. nullifier unused                 │
- │                                   ⑥ pubkey_hash  ⑦ nullifier               │   │   ──▶ store attestation + emit event  │
- │                                                                           │   │                                       │
- └───────────────────────────────────────────────────────────────────────────┘   └───────────────────────────────────────┘
-       balance is VISIBLE here, and only here                                          balance NEVER arrives here
+        OFF-CHAIN  (prover — private, balance visible here and ONLY here)
+  ┌──────────────┐     ┌──────────────────┐     ┌──────────────────────┐     ┌──────────────────┐
+  │  📧 .eml     │     │  gen_input.js    │     │  circom witness      │     │  Groth16 prove   │
+  │  (DKIM-      │ ──▶ │  parse header/   │ ──▶ │  reserve.circom      │ ──▶ │  snarkjs →       │
+  │   signed)    │     │  body, RSA key,  │     │  (7 gates, below)    │     │  proof.json +    │
+  │              │     │  balance, thresh │     │                      │     │  public.json     │
+  └──────────────┘     └──────────────────┘     └──────────────────────┘     └────────┬─────────┘
+                                                                                       │  proof + journal
+   circom gates:  ① DKIM verify  ② read balance  ③ balance ≥ threshold                 │  (no balance)
+                  ④ threshold echo  ⑤ sender_hash  ⑥ pubkey_hash  ⑦ nullifier          ▼
+  ───────────────────────────────────────────────────────────────────────  trust boundary  ──────────
+                                                                                       │
+        ON-CHAIN  (public — balance NEVER arrives here)                                ▼
+  ┌────────────────────────────────────────────────────────────────────────────────────────────┐
+  │  mint_guard.prove_reserve                                                                    │
+  │    1. pairing_check(proof) ✅   2. pubkey_hash == pinned gmail key                            │
+  │    3. sender_hash ∈ registry    4. nullifier unused    ──▶  store attestation + emit event   │
+  └────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
 
 **Step by step:**
 
