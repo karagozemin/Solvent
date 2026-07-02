@@ -4,12 +4,12 @@ use crate::fixtures;
 use soroban_sdk::{testutils::Address as _, Address, Bytes, BytesN, Env, String, U256, Vec};
 
 // Derive the 32-byte key for a journal signal exactly as the contract does.
-fn hash32_of(e: &Env, idx: usize) -> Hash32 {
+fn hash32_of(e: &Env, idx: usize) -> BytesN<32> {
     BytesN::from_array(e, &fixtures::PUBLIC_SIGNALS[idx])
 }
 
-fn pubkey_hash(e: &Env) -> Hash32 { hash32_of(e, 0) }
-fn sender_hash(e: &Env) -> Hash32 { hash32_of(e, 1) }
+fn pubkey_hash(e: &Env) -> BytesN<32> { hash32_of(e, 0) }
+fn sender_hash(e: &Env) -> BytesN<32> { hash32_of(e, 1) }
 
 // Full setup: register admin + vkey + expected gmail pubkey hash, mock auth.
 fn setup(e: &Env) -> (Address, MintGuardClient<'_>) {

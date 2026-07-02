@@ -49,9 +49,10 @@ pub struct Proof {
     pub c: BytesN<64>,          // G1
 }
 
-// A journal field (pubkey_hash / sender_hash / nullifier) as a 32-byte key.
-// Public signals are field elements < r, so 32 big-endian bytes hold them.
-pub type Hash32 = BytesN<32>;
+// Journal fields (pubkey_hash / sender_hash / nullifier) are 32-byte keys:
+// public signals are field elements < r, so 32 big-endian bytes hold them.
+// NOTE: we use BytesN<32> directly (not a type alias) — Soroban's contract
+// spec cannot export type aliases, which breaks CLI argument typing.
 
 #[contracttype]
 #[derive(Clone)]
@@ -65,7 +66,7 @@ pub struct IssuerInfo {
 pub struct Attestation {
     pub threshold: U256,   // the reserve floor PROVEN (balance stays hidden)
     pub timestamp: u64,    // email Date, seconds
-    pub nullifier: Hash32, // the email that produced this attestation
+    pub nullifier: BytesN<32>, // the email that produced this attestation
 }
 
 #[contracttype]
@@ -74,9 +75,9 @@ enum DataKey {
     Admin,               // Address — onboarding authority
     Vkey,                // VerificationKey
     PubkeyHash,          // Hash32 — gmail DKIM key hash (init + setter)
-    Issuer(Hash32),      // sender_hash -> IssuerInfo (registry)
-    Nullifier(Hash32),   // nullifier -> () (anti-replay set)
-    Attestation(Hash32), // sender_hash -> Attestation (latest reserve)
+    Issuer(BytesN<32>),      // sender_hash -> IssuerInfo (registry)
+    Nullifier(BytesN<32>),   // nullifier -> () (anti-replay set)
+    Attestation(BytesN<32>), // sender_hash -> Attestation (latest reserve)
 }
 
 #[contracterror]
@@ -112,7 +113,7 @@ impl MintGuard {
         env: Env,
         admin: Address,
         vk: VerificationKey,
-        pubkey_hash: Hash32,
+        pubkey_hash: BytesN<32>,
     ) -> Result<(), Error> {
         if env.storage().instance().has(&DataKey::Vkey) {
             return Err(Error::AlreadyInitialized);
@@ -131,7 +132,7 @@ impl MintGuard {
     }
 
     /// Rotate the expected gmail DKIM pubkey hash (Google key rotation). Admin.
-    pub fn set_pubkey_hash(env: Env, pubkey_hash: Hash32) -> Result<(), Error> {
+    pub fn set_pubkey_hash(env: Env, pubkey_hash: BytesN<32>) -> Result<(), Error> {
         Self::require_admin(&env)?;
         env.storage().instance().set(&DataKey::PubkeyHash, &pubkey_hash);
         Ok(())
@@ -144,7 +145,7 @@ impl MintGuard {
     /// correctness is enforced by the proof, not the admin.
     pub fn register_issuer(
         env: Env,
-        sender_hash: Hash32,
+        sender_hash: BytesN<32>,
         name: String,
     ) -> Result<(), Error> {
         Self::require_admin(&env)?;
@@ -169,7 +170,7 @@ impl MintGuard {
         }
 
         // --- CHECK 2: gmail signed it (pubkey_hash matches stored key). ---
-        let stored_pk: Hash32 = env
+        let stored_pk: BytesN<32> = env
             .storage()
             .instance()
             .get(&DataKey::PubkeyHash)
@@ -208,12 +209,12 @@ impl MintGuard {
     }
 
     /// Read-only: latest attestation for an issuer (demo / jury).
-    pub fn get_attestation(env: Env, sender_hash: Hash32) -> Option<Attestation> {
+    pub fn get_attestation(env: Env, sender_hash: BytesN<32>) -> Option<Attestation> {
         env.storage().persistent().get(&DataKey::Attestation(sender_hash))
     }
 
     /// Read-only: is this issuer registered?
-    pub fn is_registered(env: Env, sender_hash: Hash32) -> bool {
+    pub fn is_registered(env: Env, sender_hash: BytesN<32>) -> bool {
         env.storage().persistent().has(&DataKey::Issuer(sender_hash))
     }
 
@@ -302,7 +303,7 @@ impl MintGuard {
 
 /// U256 -> 32-byte big-endian key. Public signals are field elements < r, so
 /// they always fit in 32 bytes; to_be_bytes may be shorter, so we right-align.
-fn u256_to_hash32(env: &Env, x: &U256) -> Hash32 {
+fn u256_to_hash32(env: &Env, x: &U256) -> BytesN<32> {
     let be = x.to_be_bytes(); // Bytes, len <= 32
     let mut out = [0u8; 32];
     let len = be.len() as usize;
