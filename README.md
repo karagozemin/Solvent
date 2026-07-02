@@ -2,125 +2,166 @@
   <img src="solvent.png" alt="Solvent" width="200">
 </p>
 
-<h1>Solvent</h1>
+<h1 align="center">Solvent</h1>
 
-**Zero-knowledge proof-of-reserves on Stellar.** An issuer proves — from a real,
-DKIM-signed bank email — that their reserve is **at least** some threshold,
-**without revealing the actual balance**, and a Soroban contract verifies the
-Groth16 proof on-chain using Stellar's native BN254 pairing.
+<p align="center">
+  <b>Zero-knowledge proof-of-reserves on Stellar.</b><br>
+  Prove your bank balance clears a threshold — <i>from a real DKIM-signed email</i> —<br>
+  and let a Soroban contract verify it on-chain. The exact amount is never revealed.
+</p>
 
-> "My reserves are ≥ $1,000,000" — provable, verifiable on-chain, exact amount
-> never disclosed.
+<p align="center">
+  <a href="#-live-on-stellar-testnet"><img alt="testnet" src="https://img.shields.io/badge/Stellar-testnet%20LIVE-1f6b45?style=flat-square"></a>
+  <img alt="proof system" src="https://img.shields.io/badge/proof-Groth16%20%2F%20BN254-b5361f?style=flat-square">
+  <img alt="verifier" src="https://img.shields.io/badge/verifier-native%20pairing__check-9a7b2c?style=flat-square">
+  <img alt="tests" src="https://img.shields.io/badge/contract%20tests-8%2F8-1f6b45?style=flat-square">
+</p>
+
+<p align="center">
+  <a href="ARCHITECTURE.md"><b>📐 Architecture (diagrams)</b></a> ·
+  <a href="DEPLOYMENT.md"><b>⛓️ Live deployment</b></a> ·
+  <a href="circuits/README.md"><b>🔬 Circuit internals</b></a>
+</p>
 
 ---
 
-## Why this is not a toy
+> ### *"My reserves are ≥ \$1,000,000."*
+> Provable. Verified on-chain. **The real balance never leaves your machine.**
 
-The bank's **real DKIM RSA-2048 signature is verified *inside* the SNARK**. The
-contract never trusts a self-declared number — it trusts only:
+---
 
-1. a valid Groth16 proof (checked via `env.crypto().bn254().pairing_check`),
-2. that the signing key hash matches the known **gmail.com DKIM key**,
-3. that the sender address is a **registered issuer**,
-4. that the email hasn't been used before (**anti-replay nullifier**).
+## The 30-second version
 
-Everything the proof asserts is bound to the signature. See
-[Soundness model](#soundness-model).
+A bank sends you a routine balance email. That email is **DKIM-signed** with the
+provider's RSA-2048 key — a real cryptographic signature that already sits in
+every inbox on earth. Solvent turns that signature into a weapon:
+
+1. An **off-chain prover** verifies the DKIM signature *inside a SNARK*, reads the
+   balance from the **signed** body, and proves `balance ≥ threshold` — **without
+   putting the balance in the proof.**
+2. A **Soroban contract** verifies the Groth16 proof using Stellar's **native
+   BN254 pairing** (`env.crypto().bn254().pairing_check`), checks four soundness
+   bindings, and records an attestation.
+
+The result: a public, on-chain claim that a reserve floor was cleared — backed by
+the bank's own signature, not by anyone's word.
+
+```
+  📧  DKIM-signed email  ──▶  ⚙️  ZK prover  ──▶  📜 proof (no balance)  ──▶  🛡️ Soroban  ──▶  ✅ attestation
+     (balance visible here only)                                                (balance never arrives)
+```
+
+> **See the whole system as diagrams → [ARCHITECTURE.md](ARCHITECTURE.md)**
+
+---
+
+## Why this isn't a demo toy
+
+Most "proof-of-reserves" projects trust a number someone typed in. Solvent trusts
+**only cryptography**. The contract accepts an attestation *only* when all four of
+these hold — and every one of them is bound to the bank's real signature:
+
+| # | Binding | What it stops |
+|---|---------|---------------|
+| 1 | **Valid Groth16 proof** via native `pairing_check` | garbage / fabricated proofs |
+| 2 | **`pubkey_hash`** matches the pinned **gmail.com DKIM key** | forged / self-signed keys |
+| 3 | **`sender_hash`** is a registered issuer (regex over the *signed* header) | sender spoofing |
+| 4 | **`nullifier = Poseidon²(signature)`** is unused | replaying an old email |
+
+**The real RSA-2048 DKIM signature is verified *inside the circuit*** — SHA-256 and
+RSA, in constraints. The balance is read from the signed body, so it cannot be
+faked; only the fact that it clears the threshold is ever provable.
+
+> *Onboarding is centralized (an admin decides **who** may register). Correctness
+> is not — an attestation is written **only** when a valid ZK proof passes. The
+> admin cannot forge a reserve.*
+
+---
+
+## 🟢 Live on Stellar testnet
+
+This is not a local test run — it is the chain itself.
+
+| | |
+|---|---|
+| **Contract ID** | `CDPPM3EWAVVEE23LQVANCCRI4ERRBGJT4OUDTR46NRVDZFKAKDGYTDL5` |
+| **Network** | Stellar Testnet (Protocol 25+, native BN254 / CAP-0074) |
+| **Verifier** | Groth16 over BN254, `env.crypto().bn254().pairing_check` |
+| **WASM size** | ~10 KB |
+
+The whole project in **one transaction** — `prove_reserve` (`32117d2f…`):
+a real Gmail DKIM email → Groth16 proof → on-chain `pairing_check = true`,
+**under the 100M instruction budget**, emitting
+`reserve(sender) = { threshold: 1,000,000, timestamp }` — balance never revealed.
+
+**Every step has a verifiable tx hash → [DEPLOYMENT.md](DEPLOYMENT.md).**
 
 ---
 
 ## How it works
 
+### The circuit — [`circuits/reserve.circom`](circuits/reserve.circom)
+Seven constraint gates, all chained to one root of trust (the verified signature):
+
+- **①** `EmailVerifier` — SHA-256 + RSA-2048 DKIM verification in-circuit.
+- **②–④** carve the balance out of the **signed body** and prove
+  `balance ≥ threshold` — *the balance itself is never output.*
+- **⑤** regex the **From** address out of the **signed header** → `sender_hash`.
+- **⑥** `pubkey_hash` = Poseidon of the RSA key that actually signed → *which provider*.
+- **⑦** `nullifier` = `Poseidon²(signature)` → anti-replay.
+
+> Gate-by-gate diagram → [ARCHITECTURE §4](ARCHITECTURE.md#4--inside-the-circuit--the-seven-gates)
+
+### The contract — [`contracts/mint_guard`](contracts/mint_guard)
+`prove_reserve` runs a strict **checks-effects** state machine: all four checks
+pass *before* any state is written. The Groth16 equation is rearranged so the
+pairing product equals one:
+
 ```
-  ┌─────────────────┐     DKIM-signed .eml      ┌────────────────────┐
-  │  Issuer's inbox │ ────────────────────────▶ │  Prover (off-chain)│
-  │  (real Gmail)   │                           │  circom + snarkjs  │
-  └─────────────────┘                           └─────────┬──────────┘
-                                                          │ Groth16 proof
-                                                          │ + public journal
-                                                          ▼
-                                            ┌──────────────────────────┐
-                                            │  mint_guard (Soroban)    │
-                                            │  BN254 pairing_check      │
-                                            │  registry + attestation   │
-                                            └──────────────────────────┘
+e(-A, B) · e(alpha, beta) · e(vk_x, gamma) · e(C, delta) == 1
 ```
 
-The circuit ([`circuits/reserve.circom`](circuits/reserve.circom)):
-- verifies the DKIM RSA-2048 signature over the email (SHA-256 + RSA in-circuit),
-- extracts the balance from the **signed body** and proves `balance ≥ threshold`
-  **without exposing the balance**,
-- extracts the **From address** from the **signed header** via in-circuit regex,
-- emits a public journal that binds the proof to the real sender & key.
+Two classic silent-failure traps are handled explicitly: G1 negation over the
+**base** field `q` (not the scalar field `r`), and correct `Bn254Fr` / EIP-197
+point encoding.
 
-The contract ([`contracts/mint_guard`](contracts/mint_guard)):
-- verifies the proof with the native BN254 host functions,
-- enforces the four checks above (checks-effects order),
-- records a per-issuer attestation `(threshold, timestamp)`.
+> Verification + state-machine diagrams → [ARCHITECTURE §6–§7](ARCHITECTURE.md#6--on-chain-verification--the-groth16-pairing)
 
 ---
 
-## Public journal (7 signals)
+## The public journal (7 signals)
 
-snarkjs order — circuit outputs first, then public inputs:
+The **only** data that crosses from prover to chain. snarkjs order — outputs
+first, then public inputs. **There is no `balance` field.**
 
-| idx | signal          | meaning                                                        |
-|-----|-----------------|----------------------------------------------------------------|
-| 0   | `pubkey_hash`   | Poseidon hash of the RSA key that signed it → **which provider** |
-| 1   | `sender_hash`   | Poseidon of the full From address (from signed header) → **who** |
-| 2   | `nullifier`     | `Poseidon²(signature)` → anti-replay (per-email uniqueness)     |
-| 3   | `threshold_out` | echo of threshold                                              |
-| 4   | `timestamp_out` | echo of timestamp                                              |
-| 5   | `threshold`     | the reserve floor proven (public input)                        |
-| 6   | `timestamp`     | email `Date` as unix seconds (public input)                    |
+| idx | signal | meaning |
+|-----|--------|---------|
+| 0 | `pubkey_hash` | Poseidon of the signing RSA key → **which provider** |
+| 1 | `sender_hash` | Poseidon of the full From address → **who** |
+| 2 | `nullifier` | `Poseidon²(signature)` → **anti-replay** |
+| 3 | `threshold_out` | echo of threshold |
+| 4 | `timestamp_out` | echo of timestamp |
+| 5 | `threshold` | the reserve floor proven |
+| 6 | `timestamp` | email `Date` as unix seconds |
 
-The **balance itself is never in the journal** — only the threshold it clears.
-
----
-
-## Soundness model
-
-| Concern | Bound by |
-|---|---|
-| Forged / self-signed key | `pubkey_hash` compared on-chain to the pinned gmail DKIM key hash |
-| Spoofed sender | `sender_hash` extracted by regex over the **DKIM-signed** header (not prover-supplied) |
-| Replay of an old email | `nullifier = Poseidon²(signature)`, stored in a used-set |
-| Fake balance | balance read from the **signed body**; only `balance ≥ threshold` is provable |
-
-**Onboarding is centralized; correctness is not.** An admin registers *which*
-gmail issuers may participate (a KYC-like step), but the admin **cannot forge a
-reserve** — an attestation is written only when a valid ZK proof passes.
-Correctness lives in the math, not the operator.
-
----
-
-## Repository layout
-
-```
-circuits/          reserve.circom, build pipeline, prover scripts, fixtures
-contracts/
-  mint_guard/      Soroban Groth16 verifier + issuer registry (Rust)
-```
-
-- [`circuits/README.md`](circuits/README.md) — circuit internals, locked
-  Poseidon/serialization parameters, build steps.
+> The balance is absent **by construction** — only the floor it clears is revealed.
 
 ---
 
 ## Build & test
 
-**Circuit + proof (Node + circom + snarkjs):**
+**Circuit + proof** (Node + circom + snarkjs):
 ```bash
 cd circuits
 npm install
-npm run build                 # compile -> trusted setup -> vkey
+npm run build                 # compile → trusted setup → vkey
 node scripts/gen_input.js fixtures/gmail_balance_real.eml 1000000
 node node_modules/snarkjs/cli.js wtns calculate build/reserve_js/reserve.wasm build/input.json build/witness.wtns
 node node_modules/snarkjs/cli.js groth16 prove build/reserve.zkey build/witness.wtns build/proof.json build/public.json
 node node_modules/snarkjs/cli.js groth16 verify build/verification_key.json build/public.json build/proof.json   # -> OK!
 ```
 
-**Contract (Rust / Soroban, native tests run the real BN254 pairing):**
+**Contract** (Rust / Soroban — native tests run the *real* BN254 pairing):
 ```bash
 cargo test -p mint_guard      # 8/8: pairing, tamper-reject, registry, replay, wrong-key
 ```
@@ -128,24 +169,44 @@ cargo test -p mint_guard      # 8/8: pairing, tamper-reject, registry, replay, w
 The contract test consumes an auto-generated fixture built from the real proof
 (`circuits/scripts/gen_contract_fixtures.js`) — no hand-copied hex.
 
+**Frontend** (React landing + prove console):
+```bash
+cd solvent-web && npm install && npm run dev
+```
+
 ---
 
 ## Status
 
 | Component | State |
 |---|---|
-| DKIM + balance≥threshold circuit (BN254/Groth16) | ✅ |
+| DKIM + `balance ≥ threshold` circuit (BN254/Groth16) | ✅ |
 | Real Gmail proof, `snarkjs verify` | ✅ |
 | On-chain `pairing_check = true` (native) | ✅ |
 | Soundness bindings (pubkey / sender / nullifier) | ✅ |
 | Issuer registry + attestation protocol | ✅ 8/8 tests |
 | **WASM build + testnet deploy** | ✅ **LIVE** |
-| On-chain `pairing_check` under 100M budget | ✅ verified on testnet |
+| `pairing_check` under 100M budget | ✅ verified on testnet |
 | Replay rejection + attestation, live | ✅ |
 
-**Live on Stellar testnet** — contract
-`CDPPM3EWAVVEE23LQVANCCRI4ERRBGJT4OUDTR46NRVDZFKAKDGYTDL5`. Verifiable tx chain
-(deploy / init / register / prove_reserve) in **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+---
+
+## Repository layout
+
+```
+circuits/            reserve.circom, build pipeline, prover scripts, fixtures
+contracts/
+  mint_guard/        Soroban Groth16 verifier + issuer registry (Rust)
+solvent-web/         React frontend (landing + prove console)
+ARCHITECTURE.md      system design, all diagrams
+DEPLOYMENT.md        live testnet contract + verifiable tx chain
+```
+
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — **the full picture in diagrams** (trust
+  boundaries, circuit gates, pairing, state machine, storage, threat model).
+- [`circuits/README.md`](circuits/README.md) — circuit internals, locked
+  Poseidon/serialization parameters, build steps.
+- [`DEPLOYMENT.md`](DEPLOYMENT.md) — live contract ID + every verifiable tx hash.
 
 ---
 
@@ -153,7 +214,7 @@ The contract test consumes an auto-generated fixture built from the real proof
 
 - **Trusted setup is a single-contributor dev ceremony.** Production needs a real
   multi-party Powers-of-Tau + phase-2 ceremony.
-- **Gmail as a stand-in issuer:** because gmail.com is a shared domain, the
+- **Gmail as a stand-in issuer:** because `gmail.com` is a shared domain, the
   circuit binds the **full From address**, not just the domain. A dedicated-domain
   issuer (e.g. `chase.com`) could bind at the domain level.
 - **DKIM key rotation:** the expected gmail pubkey hash lives in storage with an
