@@ -108,9 +108,10 @@
   gap: 8px;
   padding: 20px 16px;
   background: linear-gradient(180deg, rgba(13,16,24,0.9), rgba(9,11,18,0.9));
-  border-right: 1px solid var(--line-2);
+  border-right: 1px solid var(--line);
   backdrop-filter: blur(12px);
 }
+
 
 
 .side-brand {
@@ -1295,7 +1296,25 @@
   align-items: center;
   gap: 28px;
   padding: 24px 0;
+  position: relative;
 }
+.lp-nav::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(124, 108, 255, 0.28) 20%,
+    rgba(180, 170, 255, 0.35) 50%,
+    rgba(124, 108, 255, 0.28) 80%,
+    transparent
+  );
+}
+
 .lp-brand {
   display: flex;
   align-items: center;

@@ -84,6 +84,14 @@ export default function App() {
       window.setTimeout(() => setIntro(false), 620);
     }, 1180);
   }
+  function exitToLanding() {
+    setNavOpen(false);
+    setWalletMenu(false);
+    setView("overview");
+    setEntered(false);
+    window.scrollTo({ top: 0 });
+  }
+
 
 
   // attestation
@@ -233,8 +241,14 @@ export default function App() {
 
       {/* ===================== SIDEBAR ===================== */}
       <aside className={`side ${navOpen ? "open" : ""}`}>
-        <div className="side-brand" onClick={() => setView("overview")}>
+        <div
+          className="side-brand"
+          onClick={exitToLanding}
+          role="button"
+          title="Back to landing page"
+        >
           <img src="/solvent.png" alt="" className="side-logo" />
+
           <div>
             <b>Solvent</b>
             <span>ZK proof-of-reserves</span>
