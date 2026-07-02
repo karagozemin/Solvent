@@ -18,8 +18,7 @@ const root = join(__dirname, "..");
 const MAX_HEADERS = 640;
 const MAX_BODY = 384;
 const MAX_BAL_DIGITS = 20;
-const DOMAIN_BYTES = 62;
-const MSGID_BYTES = 128;
+const FROM_WINDOW = 192;
 
 const emlPath = process.argv[2] || join(root, "fixtures/gmail_balance_real.eml");
 const threshold = BigInt(process.argv[3] || "1000000");
@@ -60,16 +59,19 @@ async function main() {
   // the VERIFIED body via RevealSubstring + DigitBytesToIntPadded. We only
   // pass the start index and length (both range-checked in-circuit).
 
-  // 3) from-domain bytes (from the From header). NOTE: this is prover-supplied
-  //    for now (Task-1 A scope). Task B binds it to the verified header.
-  const fromDomain = "gmail.com";
-  const fromDomainBytes = rightPad(Array.from(enc.encode(fromDomain)), DOMAIN_BYTES);
-
-  // 4) message-id bytes.
+  // 3) From-window start: locate the "from:" header line within the SIGNED
+  //    header and pick a window start so the whole From line fits in
+  //    FROM_WINDOW. The circuit's FromAddrRegex asserts `from:` is present in
+  //    the window, so this index is validated in-circuit (a wrong start fails).
   const headerStr = Buffer.from(ev.emailHeader.map(Number)).toString("latin1");
-  const midMatch = headerStr.match(/message-id:\s*<([^>]*)>/i);
-  const messageId = midMatch ? midMatch[1] : "";
-  const messageIdBytes = rightPad(Array.from(enc.encode(messageId)), MSGID_BYTES);
+  const fromLineIdx = headerStr.search(/\r\nfrom:/i);
+  // +2 to land on 'from' (skip the CRLF); clamp to >=0.
+  let fromWindowStart = fromLineIdx >= 0 ? fromLineIdx + 2 : headerStr.search(/^from:/i);
+  if (fromWindowStart < 0) throw new Error("'from:' header not found");
+  // Ensure window fits inside maxHeaders.
+  if (fromWindowStart + FROM_WINDOW > MAX_HEADERS) {
+    fromWindowStart = MAX_HEADERS - FROM_WINDOW;
+  }
 
   // timestamp from Date header (unix seconds).
   const dateMatch = headerStr.match(/\ndate:\s*(.+)\r?\n/i) || headerStr.match(/^date:\s*(.+)\r?\n/i);
@@ -88,9 +90,8 @@ async function main() {
     // balance (offset/length only; value derived from verified body in-circuit)
     balanceStartIndex: digitsStart.toString(),
     balanceLength: balanceLength.toString(),
-    // domain + msgid
-    fromDomain: fromDomainBytes.map(String),
-    messageId: messageIdBytes.map(String),
+    // from-address window start (validated in-circuit by FromAddrRegex)
+    fromWindowStart: fromWindowStart.toString(),
     // public
     threshold: threshold.toString(),
     timestamp: ts.toString(),
@@ -102,8 +103,8 @@ async function main() {
   console.log(`  threshold           = ${threshold}  (balance>=threshold: ${balanceVal >= threshold})`);
   console.log(`  digitsStart offset  = ${digitsStart}`);
   console.log(`  balanceLength       = ${balanceLength}`);
-  console.log(`  from domain         = ${fromDomain}`);
-  console.log(`  message-id          = ${messageId}`);
+  console.log(`  fromWindowStart     = ${fromWindowStart}`);
+  console.log(`  from line preview   = ${JSON.stringify(headerStr.slice(fromWindowStart, fromWindowStart + 48))}`);
   console.log(`  timestamp           = ${ts}`);
   console.log(`  emailBodyLength     = ${bodyLen}`);
 }

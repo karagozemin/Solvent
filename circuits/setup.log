@@ -1,36 +1,41 @@
-START Thu Jul 2 02:42:28 +03 2026
+START Thu Jul 2 03:58:21 +03 2026
 [32;22m[INFO]  [39;1msnarkJS[0m: Reading r1cs
 [32;22m[INFO]  [39;1msnarkJS[0m: Reading tauG1
 [32;22m[INFO]  [39;1msnarkJS[0m: Reading tauG2
 [32;22m[INFO]  [39;1msnarkJS[0m: Reading alphatauG1
 [32;22m[INFO]  [39;1msnarkJS[0m: Reading betatauG1
 [32;22m[INFO]  [39;1msnarkJS[0m: Circuit hash: 
-		4b73fe2a 626a43f4 b58e82a2 fb11a04c
-		5203b260 4275e82e f59725d5 c185980b
-		990ca431 7953cc84 c48b08d4 53040f12
-		8200a2d2 233511d2 33e22848 c066f006
+		90106cc4 4e57041b 141f15c9 7c7c187a
+		aa7b536e 6ed1e0d9 5785eec0 9c148a7f
+		640241e8 a3db5969 97120597 f7030505
+		03c0c835 1bacc786 06930ead 8382af11
 SETUP_DONE
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 0/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 65536/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 131072/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 196608/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 262144/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 327680/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 393216/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 458752/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 524288/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 589824/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 655360/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 720896/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 786432/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 851968/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 917504/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 983040/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 1048576/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 1114112/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 1179648/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 1245184/1340948
-[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 1310720/1340948
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 0/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 65536/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 131072/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 196608/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 262144/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 327680/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 393216/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 458752/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 524288/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 589824/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 655360/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 720896/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 786432/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 851968/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 917504/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 983040/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 1048576/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 1114112/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 1179648/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 1245184/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 1310720/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 1376256/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 1441792/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 1507328/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 1572864/1656401
+[36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: L Section: 1638400/1656401
 [36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: H Section: 0/2097152
 [36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: H Section: 65536/2097152
 [36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: H Section: 131072/2097152
@@ -64,21 +69,21 @@ SETUP_DONE
 [36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: H Section: 1966080/2097152
 [36;22m[DEBUG] [39;1msnarkJS[0m: Applying key: H Section: 2031616/2097152
 [32;22m[INFO]  [39;1msnarkJS[0m: Circuit Hash: 
-		4b73fe2a 626a43f4 b58e82a2 fb11a04c
-		5203b260 4275e82e f59725d5 c185980b
-		990ca431 7953cc84 c48b08d4 53040f12
-		8200a2d2 233511d2 33e22848 c066f006
+		90106cc4 4e57041b 141f15c9 7c7c187a
+		aa7b536e 6ed1e0d9 5785eec0 9c148a7f
+		640241e8 a3db5969 97120597 f7030505
+		03c0c835 1bacc786 06930ead 8382af11
 [32;22m[INFO]  [39;1msnarkJS[0m: Contribution Hash: 
-		ac9c5786 817271da e6e15c6b 9da66961
-		16b109ae 89d72af1 f660483c 4d772781
-		999749d2 5b3356df a3e5fb48 022dace4
-		63a67579 eb6dd18b d3751325 05871d17
+		375e371d 25e4db10 42e920f5 6734d04b
+		d6735132 dde41136 bfae697d 499edcfe
+		78d45c74 539e9857 7942ee52 cb06ffa8
+		d40fa3b1 c57d073f cc5c5adc 0327a530
 CONTRIBUTE_DONE
 [32;22m[INFO]  [39;1msnarkJS[0m: EXPORT VERIFICATION KEY STARTED
 [32;22m[INFO]  [39;1msnarkJS[0m: > Detected protocol: groth16
 [32;22m[INFO]  [39;1msnarkJS[0m: EXPORT VERIFICATION KEY FINISHED
 VKEY_DONE
 [vkey:soroban] wrote build/vkey_soroban.json
-  nPublic=6  ic points=7
+  nPublic=7  ic points=8
   alpha(G1)=0x2d4d9aa7e302d9df41749d55...
-ALL_DONE Thu Jul 2 02:47:18 +03 2026
+ALL_DONE Thu Jul 2 04:04:10 +03 2026

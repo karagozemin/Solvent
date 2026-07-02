@@ -8,14 +8,24 @@ pragma circom 2.1.6;
 //   extracted_balance >= threshold
 // while pinning the sender domain and emitting an anti-replay nullifier.
 //
-// Public journal (order matters, matches contract): domain_hash, threshold,
-// nullifier, timestamp.
+// Public journal (order matters, matches contract; see public.json for the
+// authoritative snarkjs order after compile):
+//   pubkey_hash, sender_hash, nullifier, threshold_out, timestamp_out,
+//   threshold, timestamp
+//
+// Task-B soundness (all three anchors now bound to the DKIM signature/header):
+//   * pubkey_hash  = ev.pubkeyHash            -> WHICH provider key signed it
+//   * sender_hash  = Poseidon(fold(From addr))-> WHO sent it (regex over signed header)
+//   * nullifier    = Poseidon^2(signature)    -> anti-replay, bound to signature
 
 include "circomlib/circuits/poseidon.circom";
 include "circomlib/circuits/comparators.circom";
 include "@zk-email/circuits/email-verifier.circom";
 include "@zk-email/circuits/helpers/reveal-substring.circom";
 include "@zk-email/circuits/utils/bytes.circom";
+include "@zk-email/circuits/utils/array.circom";
+include "@zk-email/circuits/utils/hash.circom";
+include "@zk-email/zk-regex-circom/circuits/common/from_addr_regex.circom";
 
 // ---------------------------------------------------------------------------
 // Bytes2Field: LOCKED byte->field fold (see circuits/README.md).
@@ -132,17 +142,24 @@ template Reserve(maxHeadersLength, maxBodyLength, n, k) {
     signal input balanceStartIndex;
     signal input balanceLength;
 
-    // ---- Domain + message-id (private) ----
-    var DOMAIN_BYTES = 62;
-    var MSGID_BYTES = 128;
-    signal input fromDomain[DOMAIN_BYTES];      // sender domain, right-0-padded
-    signal input messageId[MSGID_BYTES];        // Message-ID bytes, right-0-padded
+    // ---- From-address window (private) ----
+    // The From header line sits near the top of the (signed) header. Instead of
+    // running the expensive FromAddrRegex over all maxHeadersLength bytes
+    // (~1.04M constraints at 640), we select a small window and run the regex
+    // there (~5x cheaper). SOUNDNESS: the window is carved from the DKIM-signed
+    // emailHeader via SelectSubArray, so every byte is signed; and
+    // FromAddrRegex asserts `from:` is present (fromOut===1), so a wrong index
+    // fails to match -> witness fails. The prover cannot point at unsigned or
+    // non-From bytes.
+    var FROM_WINDOW = 192;               // From line + slack, mult-friendly
+    signal input fromWindowStart;
 
     // ---- Public journal ----
     signal input threshold;             // public: reserve floor being proven
     signal input timestamp;             // public: email Date as unix seconds
-    signal output domain_hash;          // public: PoseidonHash1(fold(fromDomain))
-    signal output nullifier;            // public: PoseidonHash1(fold(messageId))
+    signal output pubkey_hash;          // public: ev.pubkeyHash (which key signed)
+    signal output sender_hash;          // public: Poseidon(fold(From address bytes))
+    signal output nullifier;            // public: Poseidon^2(signature) anti-replay
     signal output threshold_out;        // public echo of threshold
     signal output timestamp_out;        // public echo of timestamp
 
@@ -187,39 +204,58 @@ template Reserve(maxHeadersLength, maxBodyLength, n, k) {
     geq.out === 1;
 
     // ======================================================================
-    // 4) domain_hash = PoseidonHash1(fold(fromDomain))
-    // TODO(B): bind fromDomain to the verified header via in-circuit regex —
-    //          currently prover-supplied (soundness gap: prover could claim a
-    //          different domain). This is the core Task-B hardening.
+    // 4) pubkey_hash = ev.pubkeyHash. This is the REAL anchor: EmailVerifier
+    //    Poseidon-hashes the RSA pubkey that actually verified the signature.
+    //    The contract compares this against the known gmail.com DKIM key hash,
+    //    so the prover cannot substitute a self-generated key.
     // ======================================================================
-    component dser = Bytes2Field(DOMAIN_BYTES);
-    dser.bytes <== fromDomain;
-    component dh = PoseidonHash1();
-    dh.in <== dser.out;
-    domain_hash <== dh.out;
+    pubkey_hash <== ev.pubkeyHash;
 
     // ======================================================================
-    // 5) nullifier = PoseidonHash1(fold(messageId))
-    // TODO(B): bind messageId to the verified header via in-circuit regex —
-    //          currently prover-supplied (soundness gap: prover could pick any
-    //          nullifier). This is the core Task-B hardening.
+    // 5) sender_hash = Poseidon(fold(From address)). FromAddrRegex runs over the
+    //    DKIM-VERIFIED emailHeader (From is in the signature h= list), extracts
+    //    the full address (localpart@domain — full address, not just domain,
+    //    because gmail.com is a shared provider), and we bind its hash. This
+    //    closes the "forge the sender" gap: the address comes from signed bytes.
     // ======================================================================
-    component mser = Bytes2Field(MSGID_BYTES);
-    mser.bytes <== messageId;
+    // 5a) Carve a small window out of the SIGNED header for the From line.
+    component fromWin = SelectSubArray(maxHeadersLength, FROM_WINDOW);
+    fromWin.in <== emailHeader;
+    fromWin.startIndex <== fromWindowStart;
+    fromWin.length <== FROM_WINDOW;
+    // 5b) Regex the window: extracts the full From address, asserts From present.
+    component fromRegex = FromAddrRegex(FROM_WINDOW);
+    fromRegex.msg <== fromWin.out;
+    // fromRegex.out === 1 asserted internally (From must be present in window).
+    component fser = Bytes2Field(FROM_WINDOW);
+    fser.bytes <== fromRegex.reveal0;
+    component sh = PoseidonHash1();
+    sh.in <== fser.out;
+    sender_hash <== sh.out;
+
+    // ======================================================================
+    // 6) nullifier = Poseidon^2(signature) via zk-email EmailNullifier. Bound to
+    //    the RSA-verified signature, so it is unforgeable and unique per email
+    //    (anti-replay). Fresh reserve emails yield new nullifiers by design.
+    // ======================================================================
+    // EmailNullifier in this zk-email version fails to include PoseidonLarge,
+    // so we inline its definition: nullifier = Poseidon(PoseidonLarge(sig)).
+    signal sigHash <== PoseidonLarge(n, k)(signature);
     component nh = PoseidonHash1();
-    nh.in <== mser.out;
+    nh.in <== sigHash;
     nullifier <== nh.out;
 
     // ======================================================================
-    // 6) Echo public journal fields.
+    // 7) Echo public journal fields.
     // ======================================================================
     threshold_out <== threshold;
     timestamp_out <== timestamp;
 }
 
 // maxHeadersLength=640, maxBodyLength=384 (mult of 64), n=121, k=17 (RSA-2048).
-// Sized to the real fixture (header=576, body=320) with one block of slack,
-// to fit the 2^21 Powers-of-Tau (pot21). Public signals: threshold, timestamp
-// (inputs) + outputs domain_hash, nullifier, threshold_out, timestamp_out.
+// Sized to the real fixture (header=576, body=320) with one block of slack.
+// Public signals (snarkjs order = outputs first, then public inputs):
+//   pubkey_hash, sender_hash, nullifier, threshold_out, timestamp_out,
+//   threshold, timestamp. Must fit 2^21 (pot21) — verify with r1cs info.
 component main { public [threshold, timestamp] } =
     Reserve(640, 384, 121, 17);
