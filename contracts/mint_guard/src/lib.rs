@@ -19,8 +19,9 @@
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype,
     crypto::bn254::{Bn254Fr, Bn254G1Affine, Bn254G2Affine},
-    symbol_short, Address, Bytes, BytesN, Env, String, U256, Vec,
+    contractevent, Address, Bytes, BytesN, Env, String, U256, Vec,
 };
+
 
 // BN254 base field modulus q (Fq) — used for G1 point negation (x, y) -> (x, q-y).
 // THIS IS q (base field), NOT r (scalar field). Mixing them is the classic
@@ -68,6 +69,19 @@ pub struct Attestation {
     pub timestamp: u64,    // email Date, seconds
     pub nullifier: BytesN<32>, // the email that produced this attestation
 }
+
+/// Emitted when a proof verifies. Topics: ("reserve", sender_hash);
+/// data: (threshold, timestamp). Same shape as the previous manual
+/// `env.events().publish(...)`, now via the non-deprecated macro.
+#[contractevent]
+#[derive(Clone)]
+pub struct Reserve {
+    #[topic]
+    pub sender: BytesN<32>,
+    pub threshold: U256,
+    pub timestamp: u64,
+}
+
 
 #[contracttype]
 #[derive(Clone)]
@@ -201,11 +215,14 @@ impl MintGuard {
         env.storage().persistent().set(&DataKey::Attestation(sender.clone()), &att);
 
         // --- EVENT ---
-        env.events().publish(
-            (symbol_short!("reserve"), sender),
-            (att.threshold, att.timestamp),
-        );
+        Reserve {
+            sender,
+            threshold: att.threshold,
+            timestamp: att.timestamp,
+        }
+        .publish(&env);
         Ok(())
+
     }
 
     /// Read-only: latest attestation for an issuer (demo / jury).
