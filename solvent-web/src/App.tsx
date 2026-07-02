@@ -223,8 +223,12 @@ export default function App() {
   return (
     <div className="shell">
       {intro && <IntroCurtain fading />}
+      <div className="app-grid-bg" aria-hidden />
+      <div className="app-aurora" aria-hidden />
       <div className="bg-orb orb-1" aria-hidden />
       <div className="bg-orb orb-2" aria-hidden />
+      <div className="app-noise" aria-hidden />
+
 
 
       {/* ===================== SIDEBAR ===================== */}
