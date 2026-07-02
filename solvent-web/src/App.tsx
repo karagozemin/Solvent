@@ -11,9 +11,9 @@ import {
   submitVerifyProof,
   DEMO_ISSUER,
   type LandedTx,
-
-
-
+  PROOF_HEX,
+  SCENARIOS,
+  type Scenario,
   PROVE_TX,
   CONTRACT_ID,
   EXPLORER,
@@ -1030,6 +1030,17 @@ function HeroDemo({
 }) {
   const [phase, setPhase] = useState<Phase>("email");
   const [active, setActive] = useState(-1);
+  const [sc, setSc] = useState<Scenario>(SCENARIOS[0]);
+
+  // Switch the issuer preset. Only "acme" has a live on-chain proof; the others
+  // are honestly-labelled templates of the identical flow at other thresholds.
+  function pickScenario(next: Scenario) {
+    if (next.id === sc.id) return;
+    setSc(next);
+    setPhase("email");
+    setActive(-1);
+  }
+
 
   // Animate the email → proof pipeline. Proving happens off-chain (honest:
   // a pre-generated proof is revealed), but the DKIM→sender→balance→π steps
@@ -1068,16 +1079,36 @@ function HeroDemo({
           </span>
         </div>
 
+        {/* ---- issuer scenario tabs ---- */}
+        <div className="hd-scenarios" role="tablist" aria-label="Choose issuer">
+          {SCENARIOS.map((s) => (
+            <button
+              key={s.id}
+              role="tab"
+              aria-selected={s.id === sc.id}
+              className={`hd-scenario ${s.id === sc.id ? "active" : ""}`}
+              onClick={() => pickScenario(s)}
+            >
+              <span className="hd-sc-av">{s.avatar}</span>
+              <span className="hd-sc-name">{s.label}</span>
+              <span className={`hd-sc-tag ${s.live ? "live" : ""}`}>
+                {s.live ? "live" : "template"}
+              </span>
+            </button>
+          ))}
+        </div>
+
         {/* ---- stage: email ---- */}
         <div className="hd-email">
           <div className="hd-eml-head">
-            <span className="hd-eml-ic">✉️</span>
+            <span className="hd-eml-ic">{sc.avatar}</span>
             <div>
-              <b>Balance statement</b>
-              <span className="mono">from: alerts@{DKIM.domain}</span>
+              <b>Balance statement · {sc.label}</b>
+              <span className="mono">from: alerts@{sc.domain}</span>
             </div>
             <span className="hd-eml-verified">DKIM ✓</span>
           </div>
+
           <div className="hd-eml-body">
             <div className="hd-eml-line">
               <span>Available balance</span>
@@ -1091,7 +1122,7 @@ function HeroDemo({
             </div>
             <div className="hd-eml-line">
               <span>Prove floor</span>
-              <b className="mono">≥ $1,000,000</b>
+              <b className="mono">≥ {sc.threshold}</b>
             </div>
           </div>
           <div className="hd-eml-sig mono">
@@ -1132,10 +1163,19 @@ function HeroDemo({
               <span className="hd-proof-ok">ready</span>
             </div>
             <div className="pv-hexes">
-              {["0x20445263…d754338", "0x09787604…6141450b"].map((h) => (
+              {[PROOF_HEX.a, PROOF_HEX.bx, PROOF_HEX.c].map((h) => (
                 <span key={h} className="pv-hex mono">{h}</span>
               ))}
             </div>
+            <div className="hd-proof-null mono">
+              nullifier {PROOF_HEX.nullifier}
+            </div>
+            {!sc.live && (
+              <div className="hd-proof-tpl">
+                Template preview — only <b>Acme Bank</b> has a proof burned
+                on-chain. Pick it to verify live.
+              </div>
+            )}
           </div>
         )}
 

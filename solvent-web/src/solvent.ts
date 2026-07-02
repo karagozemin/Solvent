@@ -93,7 +93,60 @@ export const PUB_SIGNALS = [
 // Shown in the UI mechanism panel.
 export const PROOF = { a: PI_A[0], b: PI_B[0][0], c: PI_C[0] };
 
+// True hex of the BN254 curve-point coordinates the on-chain pairing check
+// consumes (snarkjs stores them as decimals). Rendering the real hex means the
+// hero shows exactly what the verifier verifies — nothing decorative.
+function feHex(dec: string): string {
+  const h = BigInt(dec).toString(16).padStart(64, "0");
+  return `0x${h.slice(0, 8)}…${h.slice(-6)}`;
+}
+export const PROOF_HEX = {
+  a: feHex(PI_A[0]),
+  bx: feHex(PI_B[0][1]),
+  c: feHex(PI_C[0]),
+  nullifier: feHex(PUB_SIGNALS[2]),
+};
+
+// Issuer presets. Only `acme` has a proof already verified on testnet; the
+// others are honestly-labelled templates of the identical flow at other
+// thresholds, so nothing is over-claimed.
+export interface Scenario {
+  id: string;
+  label: string;
+  avatar: string;
+  domain: string;
+  threshold: string; // display string, e.g. "$1,000,000"
+  live: boolean;
+}
+export const SCENARIOS: Scenario[] = [
+  {
+    id: "acme",
+    label: "Acme Bank",
+    avatar: "🏦",
+    domain: DKIM.domain,
+    threshold: "$1,000,000",
+    live: true,
+  },
+  {
+    id: "neo",
+    label: "Neo Reserve",
+    avatar: "🟣",
+    domain: "chase.com",
+    threshold: "$25,000,000",
+    live: false,
+  },
+  {
+    id: "stronghold",
+    label: "Stronghold",
+    avatar: "🛡️",
+    domain: "hsbc.com",
+    threshold: "$5,000,000",
+    live: false,
+  },
+];
+
 export const CIRCUIT = {
+
   constraints: 1_692_844,
   curve: "BN254",
   system: "Groth16",
