@@ -30,30 +30,117 @@
 
 ---
 
-## The 30-second version
+## The problem
 
-A bank sends you a routine balance email. That email is **DKIM-signed** with the
-provider's RSA-2048 key — a real cryptographic signature that already sits in
-every inbox on earth. Solvent turns that signature into a weapon:
+**Proof-of-reserves today is "trust me."** When an exchange, a fund, an OTC desk,
+or a borrower claims *"we hold at least \$X"*, the counterparty has two bad options:
 
-1. An **off-chain prover** verifies the DKIM signature *inside a SNARK*, reads the
-   balance from the **signed** body, and proves `balance ≥ threshold` — **without
-   putting the balance in the proof.**
-2. A **Soroban contract** verifies the Groth16 proof using Stellar's **native
-   BN254 pairing** (`env.crypto().bn254().pairing_check`), checks four soundness
-   bindings, and records an attestation.
+- **Believe a screenshot / PDF / a number on a dashboard** — trivially faked,
+  reused, or photoshopped. This is exactly how FTX-style holes stay hidden until
+  it's too late.
+- **Demand a full audit / raw bank access** — slow, expensive, and it leaks the
+  *exact* balance, account structure, and counterparties to whoever is checking.
 
-The result: a public, on-chain claim that a reserve floor was cleared — backed by
-the bank's own signature, not by anyone's word.
+So the market is stuck between **unverifiable claims** and **total disclosure**.
+There is no way to prove *"my reserves clear this floor"* that is (a) cryptographically
+sound, (b) privacy-preserving, and (c) checkable by anyone in seconds. That gap is
+the problem Solvent closes.
+
+---
+
+## The solution
+
+Solvent turns a signal that **already exists in every inbox** — the bank's
+**DKIM-signed balance email** — into a trustless proof-of-reserves.
+
+Instead of a human vouching for a number, a **zero-knowledge proof** vouches for
+the bank's own cryptographic signature:
+
+1. An **off-chain prover** verifies the provider's **RSA-2048 DKIM signature inside
+   a SNARK**, reads the balance from the *signed* email body, and proves
+   `balance ≥ threshold` — **without ever putting the balance in the proof.**
+2. A **Soroban contract** verifies that Groth16 proof with Stellar's **native BN254
+   pairing**, enforces four soundness bindings, and writes a public attestation.
+
+The output is a public, on-chain claim — *"issuer X's reserves cleared \$Y at time
+T"* — backed by the **bank's signature**, not by anyone's word, and revealing
+**nothing but the floor that was cleared.**
 
 ```
   📧  DKIM-signed email  ──▶  ⚙️  ZK prover  ──▶  📜 proof (no balance)  ──▶  🛡️ Soroban  ──▶  ✅ attestation
      (balance visible here only)                                                (balance never arrives)
 ```
 
+---
+
+## Real-world fit (PMF)
+
+The pain is concrete and the "email you already have" wedge is what makes it
+adoptable — no new bank integration, no oracle, no custody of anyone's funds.
+
+| Who | The claim they need to make | Today | With Solvent |
+|-----|-----------------------------|-------|--------------|
+| **Exchanges / custodians** | "user deposits are fully backed" | screenshots, periodic PDF audits | continuous, on-chain, balance-hiding attestation |
+| **OTC desks / market makers** | "we can settle this trade" | trust + slow bank letters | instant `≥ threshold` proof before the trade |
+| **Borrowers / DeFi collateral** | "I hold enough off-chain reserve" | full disclosure or nothing | prove the floor, hide the amount |
+| **Funds / DAOs treasuries** | "treasury is solvent" | quarterly reports | anyone re-checks the proof in seconds |
+
+**Why now:** Stellar Protocol 25+ ships a **native BN254 `pairing_check`**, so a
+Groth16 verifier runs on-chain **under the 100M instruction budget** — cheap enough
+to make per-claim proofs practical instead of a research demo. The distribution
+wedge (DKIM is already on 100% of bank email) plus a real on-chain verifier is what
+turns this from "nice idea" into a deployable product.
+
+> *Onboarding is centralized (an admin decides **who** may register). Correctness is
+> not — an attestation is written **only** when a valid ZK proof passes.*
+
+---
+
+## Technical workflow
+
+How a claim goes from an inbox to an on-chain attestation, end to end. The
+**trust boundary** is the prover: the raw email + exact balance never leave it —
+only a proof and the 7-signal journal cross to the chain.
+
+```
+ ┌─────────────────────── OFF-CHAIN (prover, private) ───────────────────────┐   ┌────────── ON-CHAIN (public) ──────────┐
+ │                                                                           │   │                                       │
+ │  📧 .eml   ──▶  gen_input.js   ──▶  circom witness  ──▶  Groth16 prove    │   │   mint_guard.prove_reserve            │
+ │  (DKIM-     parse header/body,    reserve.circom:      snarkjs → proof.json│   │   1. pairing_check(proof)  ✅          │
+ │   signed)   RSA key, balance,     ① DKIM verify         + public.json      │──▶│   2. pubkey_hash == pinned gmail key  │
+ │             threshold             ②④ balance≥threshold  (proof + journal)  │   │   3. sender_hash ∈ registry           │
+ │                                   ⑤ sender_hash                            │   │   4. nullifier unused                 │
+ │                                   ⑥ pubkey_hash  ⑦ nullifier               │   │   ──▶ store attestation + emit event  │
+ │                                                                           │   │                                       │
+ └───────────────────────────────────────────────────────────────────────────┘   └───────────────────────────────────────┘
+       balance is VISIBLE here, and only here                                          balance NEVER arrives here
+```
+
+**Step by step:**
+
+1. **Get the signal.** A provider (Gmail, a bank) sends a routine balance email.
+   It is already **DKIM-signed** with the provider's RSA-2048 key — no new
+   integration required.
+2. **Build the witness.** `gen_input.js` parses the `.eml` into circuit inputs:
+   the signed header + body bytes, the RSA public key, the balance substring
+   location, and the target `threshold`.
+3. **Prove (off-chain).** `reserve.circom` runs the [seven gates](#how-it-works):
+   it verifies the DKIM signature in-circuit, reads the balance from the *signed*
+   body, and proves `balance ≥ threshold`. snarkjs emits `proof.json` +
+   `public.json` (the 7-signal journal). **The balance is not in either file.**
+4. **Submit.** The proof + journal are sent to `mint_guard.prove_reserve` on
+   Stellar. This is the only thing that crosses the trust boundary.
+5. **Verify (on-chain).** The contract runs the native BN254 `pairing_check` and
+   the four soundness bindings (proof valid · right provider · registered issuer ·
+   fresh nullifier) in a strict checks-before-effects order.
+6. **Attest.** On success it stores `{ threshold, timestamp, nullifier }` for the
+   issuer and emits a `reserve` event. Anyone can now re-verify the claim — the
+   exact balance was never disclosed.
+
 > **See the whole system as diagrams → [ARCHITECTURE.md](ARCHITECTURE.md)**
 
 ---
+
 
 ## Why this isn't a demo toy
 
