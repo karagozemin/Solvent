@@ -1,45 +1,45 @@
 /* ============================================================
-   Solvent — global reset + design tokens
+   Solvent — "The Attestation Ledger"
+   Global reset + design tokens (ink-on-paper art direction)
    ============================================================ */
 
 :root {
-  /* base surfaces — deep indigo-black */
-  --bg: #070610;
-  --bg-2: #0b0a17;
-  --surface: #100e1e;
-  --surface-2: #151327;
-  --surface-3: #1b1834;
-  --line: #241f3f;
-  --line-2: #322b57;
+  /* ---- paper surfaces ---- */
+  --paper: #ece7db;        /* page */
+  --paper-2: #f4f0e6;      /* raised card */
+  --paper-3: #f9f6ee;      /* brightest inset */
+  --paper-edge: #e0d9c8;   /* subtle darker paper */
 
-  /* type */
-  --text: #f4f3fb;
-  --text-2: #b8b4d4;
-  --text-3: #7a7499;
-  --text-faint: #524d70;
+  /* ---- ink ---- */
+  --ink: #17140f;          /* near-black text */
+  --ink-2: #443d31;        /* secondary */
+  --ink-3: #7c7362;        /* muted */
+  --ink-faint: #a79d88;    /* faint labels */
 
-  /* brand — premium violet ↔ blue */
-  --mint: #7c6cff;       /* primary (violet) */
-  --mint-2: #6a5cf5;     /* primary darker */
-  --cyan: #8b8bff;       /* soft periwinkle */
-  --blue: #4f7bff;       /* electric blue */
-  --violet: #a48bff;     /* light violet */
-  --amber: #ffb648;
-  --red: #ff6b6b;
+  /* ---- rules (hairlines) ---- */
+  --rule: #cdc4ae;
+  --rule-2: #b8ad92;
+  --rule-strong: #17140f;
 
+  /* ---- the single accents ---- */
+  --stamp: #b5361f;        /* oxide stamp red */
+  --stamp-deep: #8f2817;
+  --seal: #1f6b45;         /* seal green (verified) */
+  --seal-deep: #164e33;
+  --gold: #9a7b2c;
 
-  /* effects */
-  --radius: 16px;
-  --radius-lg: 22px;
-  --radius-sm: 10px;
-  --ring: 0 0 0 1px var(--line);
-  --shadow-lg: 0 40px 120px -40px rgba(0, 0, 0, 0.9);
+  /* ---- effects ---- */
+  --radius: 3px;
+  --radius-lg: 5px;
+  --shadow-card: 4px 5px 0 rgba(23, 20, 15, 0.10);
+  --shadow-lift: 7px 9px 0 rgba(23, 20, 15, 0.14);
 
-  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --display: "Space Grotesk", var(--sans);
-  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* ---- type ---- */
+  --display: "Instrument Serif", "Times New Roman", Georgia, serif;
+  --sans: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 * {
@@ -54,52 +54,72 @@ html {
 }
 
 body {
-  background: var(--bg);
-  color: var(--text);
+  background: var(--paper);
+  color: var(--ink);
   font-family: var(--sans);
   font-size: 16px;
-  line-height: 1.6;
-  letter-spacing: -0.01em;
+  line-height: 1.55;
+  letter-spacing: -0.006em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   overflow-x: hidden;
 }
 
+/* faint paper grain + a warm vignette, fixed behind everything */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.05;
+  mix-blend-mode: multiply;
+}
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 50% -10%, transparent 55%, rgba(23,20,15,0.06) 100%);
+}
+
 #root {
   min-height: 100svh;
   isolation: isolate;
+  position: relative;
+  z-index: 1;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; cursor: pointer; }
 
-button {
-  font-family: inherit;
-  cursor: pointer;
-}
+.mono { font-family: var(--mono); font-feature-settings: "ss01", "zero"; }
 
 ::selection {
-  background: rgba(124, 108, 255, 0.35);
-  color: #fff;
+  background: rgba(181, 54, 31, 0.22);
+  color: var(--ink);
 }
 
-
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-::-webkit-scrollbar-track {
-  background: var(--bg);
-}
+/* ---- scrollbar ---- */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: var(--paper); }
 ::-webkit-scrollbar-thumb {
-  background: var(--line-2);
-  border-radius: 10px;
-  border: 2px solid var(--bg);
+  background: var(--rule-2);
+  border: 3px solid var(--paper);
+  border-radius: 0;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: #33405e;
+::-webkit-scrollbar-thumb:hover { background: var(--ink-3); }
+
+/* ---- shared micro-label ("FORM ZK-7" style evrak etiketi) ---- */
+.stencil {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  color: var(--ink-faint);
 }
