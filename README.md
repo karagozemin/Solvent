@@ -6,9 +6,10 @@
 
 <p align="center">
   <b>Zero-knowledge proof-of-reserves on Stellar.</b><br>
-  Prove your bank balance clears a threshold — <i>from a real DKIM-signed email</i> —<br>
+  Prove your bank balance clears a threshold, <i>from a real DKIM-signed email</i>,<br>
   and let a Soroban contract verify it on-chain. The exact amount is never revealed.
 </p>
+
 
 <p align="center">
   <a href="#-live-on-stellar-testnet"><img alt="testnet" src="https://img.shields.io/badge/Stellar-testnet%20LIVE-1f6b45?style=flat-square"></a>
