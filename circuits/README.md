@@ -1,116 +1,145 @@
-# Solvent Circuits — `reserve.circom`
+<h1 align="center">Solvent Circuits — <code>reserve.circom</code></h1>
 
-Zero-knowledge reserve proof for the Solvent mint guard.
+<p align="center">
+  <b>The trustless anchor.</b> A bank's real DKIM RSA-2048 signature is verified
+  <i>inside</i> the SNARK — so the balance can be read from bytes the bank
+  actually signed, and only <code>balance ≥ threshold</code> ever leaves.
+</p>
 
-- **Proof system:** Groth16
-- **Curve / field:** BN254 (a.k.a. `alt_bn128` / `bn128`) — Circom **default** field.
-  Verified on-chain via Stellar `env.crypto().bn254().pairing_check` (Protocol 25+, CAP-0074).
-- **DKIM:** in-circuit RSA-2048 over SHA-256 via [`@zk-email/circuits`].
-- **Hash:** circomlib **Poseidon**, width **t = 2** ONLY. No other arity anywhere.
+<p align="center">
+  <a href="../README.md">← Back to README</a> ·
+  <a href="../ARCHITECTURE.md">Architecture diagrams →</a>
+</p>
 
-> ⚠️ **DKIM-in-circuit is the trustless anchor.** The bank's real DKIM RSA-2048
-> signature is verified *inside* the SNARK. The contract trusts only the proof +
-> the pinned RSA public key + the pinned sender domain hash — never a
-> self-declared number.
+---
+
+## At a glance
+
+| | |
+|---|---|
+| **Proof system** | Groth16 |
+| **Curve / field** | BN254 (`alt_bn128`) — Circom's **default** field, so no field remap |
+| **On-chain verify** | Stellar `env.crypto().bn254().pairing_check` (Protocol 25+, CAP-0074) |
+| **DKIM** | in-circuit RSA-2048 over SHA-256 via [`@zk-email/circuits`] |
+| **Hash** | circomlib **Poseidon**, width **t = 2** ONLY — no other arity anywhere |
+| **Top template** | `Reserve(maxHeaderLen=640, maxBodyLen=384, n=121, k=17)` |
+
+> ⚠️ **DKIM-in-circuit is the whole point.** The contract trusts only: the proof,
+> the pinned RSA public-key hash, and the registered sender hash — **never a
+> self-declared number.** Everything the journal reveals is chained back to one
+> in-circuit RSA verification.
+
+---
+
+## The seven gates
+
+`reserve.circom` is a pipeline where **every** output is bound to gate ① — if the
+signature doesn't verify, no witness exists and nothing downstream can be forged.
+
+| Gate | Template | Guarantee |
+|------|----------|-----------|
+| ① | `EmailVerifier` | header **and** body are the exact bytes the RSA-2048 key signed — the single root of trust |
+| ② | `RevealSubstring` | balance digits are a genuine slice of the **signed body** |
+| ③ | `DigitBytesToIntPadded` | ASCII digits → field integer, skipping `0x00` padding |
+| ④ | `GreaterEqThan(128)` | **the only numeric claim that leaves:** `balance ≥ threshold` |
+| ⑤ | `FromAddrRegex` → `Bytes2Field` → `Poseidon` | full From address from the **signed header** → `sender_hash` |
+| ⑥ | `ev.pubkeyHash` | Poseidon of the verifying RSA key → **which provider** signed |
+| ⑦ | `Poseidon(PoseidonLarge(sig))` | unique, unforgeable per-email tag → `nullifier` |
+
+> Full gate-by-gate diagram → [ARCHITECTURE §4](../ARCHITECTURE.md#4--inside-the-circuit--the-seven-gates)
 
 ---
 
 ## Public journal (public signals, in order)
 
-| idx | signal        | meaning                                              |
-|-----|---------------|------------------------------------------------------|
-| 0   | `domain_hash` | `PoseidonHash(serialize(from_domain))` — pins bank   |
-| 1   | `threshold`   | reserve floor proven: `extracted_balance >= threshold` |
-| 2   | `nullifier`   | `PoseidonHash(serialize(message_id))` — anti-replay  |
-| 3   | `timestamp`   | email `Date` as unix seconds (public)                |
+snarkjs emits circuit **outputs** first, then public **inputs**. The contract
+hard-codes these indices, so this order is a binding contract between the two
+codebases. **Note: there is no `balance` signal — it is absent by construction.**
 
-Private inputs: raw email bytes, RSA-2048 DKIM signature, bank RSA public key,
-body regex match indices, message-id bytes, from-domain bytes,
-`extracted_balance`.
+| idx | signal | meaning |
+|-----|--------|---------|
+| 0 | `pubkey_hash` | Poseidon of the signing RSA key → pins **which provider** (checked vs. pinned gmail DKIM key) |
+| 1 | `sender_hash` | Poseidon of the full From address → pins **who** (registry key) |
+| 2 | `nullifier` | `Poseidon²(signature)` → anti-replay |
+| 3 | `threshold_out` | echo of threshold (binds output ↔ input) |
+| 4 | `timestamp_out` | echo of timestamp (binds output ↔ input) |
+| 5 | `threshold` | the reserve floor proven |
+| 6 | `timestamp` | email `Date` as unix seconds |
+
+**Private inputs:** raw email header + body bytes, RSA-2048 DKIM signature, bank
+RSA public key, body/header regex match indices, and the extracted balance.
+
+> The full From address (not just `gmail.com`) is bound because Gmail is a shared
+> domain — this is what closes sender-spoofing for a shared-domain issuer.
 
 ---
 
 ## 🔒 LOCKED: Poseidon parameters (BN254, circomlib-compatible)
 
 Both the circuit (circomlib `Poseidon(2)`) and the contract (host
-`poseidon_permutation`) MUST use this exact set. Generated by
-`scripts/gen_poseidon_constants.js` from circomlib and emitted to:
+`poseidon_permutation`) MUST use this exact set, generated by
+`scripts/gen_poseidon_constants.js` and emitted to:
 
-- `build/poseidon_t2_constants.json` (canonical, both sides read this)
-- `build/poseidon_t2_constants.rs`   (contract include)
+- `build/poseidon_t2_constants.json` — canonical, both sides read this
+- `build/poseidon_t2_constants.rs` — contract include
 
-| param       | value  |
-|-------------|--------|
-| field       | `BN254` |
-| `t` (width) | `2`    |
-| `d` (sbox)  | `5`    |
-| `rounds_f`  | `8`    |
-| `rounds_p`  | `56`   |
-| MDS         | `2×2`, from circomlib |
-| round consts| `(rounds_f + rounds_p) × t` = `64 × 2`, from circomlib |
+| param | value |
+|-------|-------|
+| field | `BN254` |
+| `t` (width) | `2` |
+| `d` (sbox) | `5` |
+| `rounds_f` | `8` |
+| `rounds_p` | `56` |
+| MDS | `2×2`, from circomlib |
+| round consts | `(rounds_f + rounds_p) × t = 64 × 2`, from circomlib |
 
 ### Hash construction (sponge over the permutation)
 
 circomlib `Poseidon(nInputs)` is **not** a raw permutation call. For `t = 2`
-(rate 1, capacity 1) the circuit computes `Poseidon([in])` for a single field
-input as:
+(rate 1, capacity 1) a single-field hash is:
 
 ```
-state = [0, in0]          // capacity slot = 0, then absorb one field elem
-state = permute(state)    // full Poseidon permutation, t=2
+state  = [0, in0]         // capacity slot = 0, then absorb one field elem
+state  = permute(state)   // full Poseidon permutation, t = 2
 output = state[0]         // squeeze first element
 ```
 
-The contract's hand-wrapped sponge (`mint_guard::poseidon`) MUST reproduce this
-byte-for-byte: same initial state layout `[C=0, x]`, same permutation, same
-squeeze of `state[0]`. This is asserted by the cross-check test
-(`scripts/poseidon_crosscheck.js` ↔ contract unit test) and is the **Task 1
-acceptance gate**.
-
-> Since we locked **a single field input per hash** (see serialization below),
-> every Poseidon call in Solvent is exactly this one shape. `Poseidon(prev_root,
-> digest)` on the attestation chain also reduces to a single-field input by first
-> folding its two operands into one field via the same serialization rule.
+The contract's hand-wrapped sponge (`mint_guard::poseidon`) reproduces this
+**byte-for-byte**: same initial layout `[C=0, x]`, same permutation, same squeeze
+of `state[0]`. Asserted by the cross-check test
+(`scripts/poseidon_crosscheck.js` ↔ contract unit test).
 
 ---
 
 ## 🔒 LOCKED: byte → field serialization
 
-`message_id` and `from_domain` are byte arrays larger than one BN254 field
-element (field is ~254 bits ≈ 31 bytes). We reduce any byte array to **one**
-field element deterministically so the fixed-arity Poseidon(2) input is
+Byte arrays larger than one BN254 field element (~254 bits ≈ 31 bytes) are reduced
+to **one** field element deterministically, so the fixed-arity Poseidon(2) input is
 unambiguous on both sides.
 
-**Rule `serialize(bytes) -> Fr`:**
+**Rule `serialize(bytes) -> Fr` (`Bytes2Field`):**
 
-1. **Chunk** into fixed **31-byte little-endian limbs** (31 bytes < field
-   modulus, so each limb is a valid `Fr` with no reduction).
-2. **Fixed limb count** per input type (pad the byte array with `0x00` on the
-   right to the fixed length *before* chunking):
-   - `message_id`: **`MSGID_BYTES = 128`** → `128 / 31 → 5` limbs (last limb
-     zero-padded).
-   - `from_domain`: **`DOMAIN_BYTES = 62`** → `62 / 31 = 2` limbs.
-3. **Fold** the limbs into a single field element by a Poseidon-free linear
-   Horner combination over a fixed base, then Poseidon-hash the result:
+1. **Chunk** into fixed **31-byte little-endian limbs** (31 bytes < modulus → each
+   limb is a valid `Fr` with no reduction).
+2. **Right-pad** with `0x00` to the fixed length *before* chunking. Inputs longer
+   than the fixed length are **rejected** by the prover, never truncated.
+3. **Fold** limbs via a Horner combination over `BASE = 2²⁴⁸`, then Poseidon-hash:
    ```
    acc = 0
-   for limb in limbs (LE order, i = 0..n):
-       acc = acc + limb * (BASE^i mod p)      // BASE = 2^248 (fits > 31 bytes)
-   field_in = acc mod p
-   output   = PoseidonHash([field_in])         // the single-input sponge above
+   for limb in limbs (LE, i = 0..n):
+       acc += limb * (BASE^i mod p)
+   output = PoseidonHash([acc mod p])
    ```
-   `BASE = 2^248` guarantees limbs never overlap (31 bytes = 248 bits) so the
-   fold is injective for the fixed limb count.
+   `BASE = 2²⁴⁸` (31 bytes = 248 bits) guarantees limbs never overlap, so the fold
+   is injective for a fixed limb count.
 
-Constants (locked): `LIMB_BYTES = 31`, `BASE = 2^248`, `MSGID_BYTES = 128`,
-`DOMAIN_BYTES = 62`.
+Constants (locked): `LIMB_BYTES = 31`, `BASE = 2²⁴⁸`.
 
-> Padding rule is **right-pad with `0x00` to the fixed length**. Inputs longer
-> than the fixed length are rejected by the prover (Task 4), never truncated.
+The contract reproduces `serialize()` + the single-input sponge exactly; the
+cross-check test feeds identical raw bytes to both sides and asserts equal 32-byte
+big-endian outputs.
 
-The contract reproduces `serialize()` + the single-input Poseidon sponge exactly.
-The cross-check test feeds identical raw bytes to both and asserts equal 32-byte
-big-endian field outputs.
+> Serialization + on-chain encoding trace → [ARCHITECTURE §11](../ARCHITECTURE.md#11--data-encoding-across-the-stack)
 
 ---
 
@@ -119,25 +148,46 @@ big-endian field outputs.
 ```bash
 npm install
 npm run poseidon:constants     # emit locked Poseidon constants (json + rs)
-npm run build                  # circom -> r1cs -> ptau -> zkey -> vkey.json
-npm run poseidon:crosscheck    # JS(circomlib) vs JS(host-shape) parity pre-check
-npm run vkey:soroban           # vkey.json -> BN254 contract VerificationKey bytes
+npm run build                  # circom → r1cs → ptau → zkey → vkey.json
+npm run poseidon:crosscheck    # circomlib vs host-shape parity pre-check
+npm run vkey:soroban           # vkey.json → BN254 contract VerificationKey bytes
 ```
 
-The contract-side half of the cross-check lives in
-`contracts/mint_guard` unit tests (Task 3) and consumes the vectors emitted here
-at `build/poseidon_crosscheck_vectors.json`.
+**Prove from a real email:**
+```bash
+node scripts/gen_input.js fixtures/<email>.eml 1000000
+node node_modules/snarkjs/cli.js wtns calculate build/reserve_js/reserve.wasm build/input.json build/witness.wtns
+node node_modules/snarkjs/cli.js groth16 prove build/reserve.zkey build/witness.wtns build/proof.json build/public.json
+node node_modules/snarkjs/cli.js groth16 verify build/verification_key.json build/public.json build/proof.json  # OK!
+```
+
+The contract-side cross-check lives in `contracts/mint_guard` unit tests and
+consumes `build/poseidon_crosscheck_vectors.json` emitted here.
 
 ---
 
-## ⚠️ Honesty notes (also surfaced in root README)
+## Script map
+
+| script | role |
+|--------|------|
+| `gen_poseidon_constants.js` | emit locked Poseidon constants (json + rs) |
+| `serialize.js` | **LOCKED** byte→field fold (must match contract) |
+| `poseidon_ref.js` / `poseidon_crosscheck.js` | reference sponge + parity vectors |
+| `gen_input.js` | `.eml` → circuit witness input |
+| `vkey_to_soroban.js` | vkey → Soroban G1/G2 (EIP-197) encoding |
+| `gen_contract_fixtures.js` | real proof → Rust test fixture (no hand-copied hex) |
+| `gen_fixtures.js` | synthetic DKIM-signed test emails |
+
+---
+
+## ⚠️ Honesty notes
 
 - **Trusted setup is a single-contributor dev ceremony** (`build.sh`). Production
   requires a real multi-party Powers-of-Tau + phase-2 ceremony.
-- **Fixtures:** `fixtures/mock_balance_email.eml` is a **CLEARLY LABELED MOCK**
-  (self-generated DKIM keypair). `fixtures/real_format_balance.eml` mirrors a real
-  bank layout but is also synthetic. No real bank data is committed.
-- **Proving runs in the backend** (Task 4), not client-side — RSA-2048 in-circuit
-  is heavy. Client-side WASM proving is roadmap.
+- **Fixtures are synthetic** — DKIM-signed with a self-generated keypair. The
+  signature verification is real; only the signing authority is mocked. No real
+  bank data is committed. See [`fixtures/README.md`](fixtures/README.md).
+- **Proving runs in the backend**, not client-side — RSA-2048 in-circuit is heavy.
+  Client-side WASM proving is roadmap.
 
 [`@zk-email/circuits`]: https://github.com/zkemail/zk-email-verify
