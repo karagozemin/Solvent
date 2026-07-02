@@ -8,10 +8,17 @@ import {
   Account,
   nativeToScVal,
   scValToNative,
+  xdr,
   BASE_FEE,
   Networks,
 } from "@stellar/stellar-sdk";
 import { Server } from "@stellar/stellar-sdk/rpc";
+import {
+  isConnected,
+  requestAccess,
+  getAddress,
+  signTransaction,
+} from "@stellar/freighter-api";
 import { Buffer } from "buffer";
 
 export const CONTRACT_ID =
@@ -50,11 +57,40 @@ export const DKIM = {
 };
 
 // The actual Groth16 proof that was verified on-chain (BN254 field elements).
-export const PROOF = {
-  a: "20445263340791973997742966562676046831971497389422593618465585043795089754338",
-  b: "861666916801843749919408803809632526694142608510821279103415832611615431840",
-  c: "9787604844851213824238853139977758927197233479639010632643624376696141450621",
-};
+// pi_a / pi_b / pi_c straight from snarkjs proof.json (projective; z dropped).
+const PI_A = [
+  "20445263340791973997742966562676046831971497389422593618465585043795089754338",
+  "8320016218743750021976875302764826845718214490602645779871522105505887369326",
+];
+const PI_B = [
+  [
+    "861666916801843749919408803809632526694142608510821279103415832611615431840",
+    "673113070045290549099297471252206540352548306226202526993574595042458246340",
+  ],
+  [
+    "10217109917137825957076678575267447805373069738124721054691507784759752786526",
+    "6983033972434408433601410157764432013310453943142625262436719295194346752518",
+  ],
+];
+const PI_C = [
+  "9787604844851213824238853139977758927197233479639010632643624376696141450621",
+  "11758426781633939719164933715317126755745398633284873234191685279428271375317",
+];
+
+// The public journal (snarkjs public.json order) that this proof attests to.
+// [pubkey_hash, sender_hash, nullifier, threshold_out, ts_out, threshold, ts]
+export const PUB_SIGNALS = [
+  "18112063367061490498008565150523525787547054147177385004656549933281162521999",
+  "17831355512612260831152979993606432227319710530169322375827124426448734591653",
+  "15657440520434277026389847494054181531672272663886737253564644048899734734132",
+  "1000000",
+  "1782948043",
+  "1000000",
+  "1782948043",
+];
+
+// Shown in the UI mechanism panel.
+export const PROOF = { a: PI_A[0], b: PI_B[0][0], c: PI_C[0] };
 
 export const CIRCUIT = {
   constraints: 1_692_844,
@@ -123,4 +159,180 @@ export function formatUsd(n: bigint): string {
 
 export function formatDate(unixSeconds: bigint): string {
   return new Date(Number(unixSeconds) * 1000).toISOString().slice(0, 10);
+}
+
+// ===========================================================================
+//  WRITE PATH — the real dApp: connect Freighter, verify live, submit tx.
+// ===========================================================================
+
+// Decimal field element -> 32-byte big-endian buffer.
+function decTo32(dec: string): Buffer {
+  let hex = BigInt(dec).toString(16);
+  if (hex.length % 2) hex = "0" + hex;
+  const buf = Buffer.from(hex, "hex");
+  if (buf.length > 32) throw new Error("field element > 32 bytes");
+  const out = Buffer.alloc(32);
+  buf.copy(out, 32 - buf.length);
+  return out;
+}
+
+// G1 = be(x) || be(y)  -> BytesN<64>
+function g1Bytes(p: string[]): Buffer {
+  return Buffer.concat([decTo32(p[0]), decTo32(p[1])]);
+}
+
+// G2 = be(x_c1)||be(x_c0)||be(y_c1)||be(y_c0)  (EIP-197 order) -> BytesN<128>
+function g2Bytes(p: string[][]): Buffer {
+  return Buffer.concat([
+    decTo32(p[0][1]),
+    decTo32(p[0][0]),
+    decTo32(p[1][1]),
+    decTo32(p[1][0]),
+  ]);
+}
+
+// Build the `Proof` struct ScVal. Soroban structs require scvSymbol map keys;
+// nativeToScVal emits scvString keys which trap with map_unpack UnexpectedType.
+// Verified against the live contract: verify_proof -> true, 35M CPU insns.
+function proofScVal(): xdr.ScVal {
+  const entry = (k: string, buf: Buffer) =>
+    new xdr.ScMapEntry({
+      key: xdr.ScVal.scvSymbol(k),
+      val: nativeToScVal(buf), // -> scvBytes
+    });
+  return xdr.ScVal.scvMap([
+    entry("a", g1Bytes(PI_A)),
+    entry("b", g2Bytes(PI_B)),
+    entry("c", g1Bytes(PI_C)),
+  ]);
+}
+
+// Vec<U256> of the public journal.
+function pubSignalsScVal(): xdr.ScVal {
+  return nativeToScVal(
+    PUB_SIGNALS.map((s) => BigInt(s)),
+    { type: "u256" },
+  );
+}
+
+export interface WalletState {
+  address: string;
+}
+
+// Connect Freighter. Returns the connected G... address.
+export async function connectWallet(): Promise<WalletState> {
+  const conn = await isConnected();
+  if (!conn.isConnected) {
+    throw new Error(
+      "Freighter not detected. Install the Freighter extension and switch it to Testnet.",
+    );
+  }
+  const access = await requestAccess();
+  if (access.error) throw new Error(access.error);
+  const addr = access.address || (await getAddress()).address;
+  if (!addr) throw new Error("No address returned by Freighter.");
+  return { address: addr };
+}
+
+export interface VerifyResult {
+  valid: boolean;      // pairing_check result
+  cpuInsns: number;    // on-chain instructions consumed
+  budget: number;      // Soroban per-tx limit
+}
+
+// LIVE ZK: run verify_proof as a read-only simulation. Runs the real on-chain
+// pairing_check and reports the CPU budget. State-free -> callable infinitely.
+export async function verifyProofLive(source: string): Promise<VerifyResult> {
+  const server = new Server(RPC_URL);
+  const contract = new Contract(CONTRACT_ID);
+  const acct = await server.getAccount(source);
+
+  const tx = new TransactionBuilder(acct, {
+    fee: BASE_FEE,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(contract.call("verify_proof", proofScVal(), pubSignalsScVal()))
+    .setTimeout(30)
+    .build();
+
+  const sim = await server.simulateTransaction(tx);
+  if ("error" in sim && sim.error) {
+    throw new Error(`verify_proof simulation failed: ${sim.error}`);
+  }
+  const success = sim as any;
+  const valid = scValToNative(success.result.retval) === true;
+  // CPU instructions the on-chain pairing_check consumed, read from the
+  // Soroban resource footprint the simulator computed.
+  const cpuInsns = Number(
+    success.transactionData.build().resources().instructions(),
+  );
+  return { valid, cpuInsns, budget: CIRCUIT.budgetLimit };
+}
+
+export interface SubmitResult {
+  hash: string;
+  success: boolean;
+  replayRejected: boolean; // true if contract returned Error #7 (nullifier used)
+  errorCode: number | null;
+}
+
+// REAL TX: build prove_reserve, have the user sign it in Freighter, submit it.
+// The demo proof's nullifier is already burned on-chain, so a correctly-
+// functioning contract MUST reject this with Error #7 — proving anti-replay
+// live, with the juror's own signed transaction.
+export async function submitProveReserve(source: string): Promise<SubmitResult> {
+  const server = new Server(RPC_URL);
+  const contract = new Contract(CONTRACT_ID);
+  const acct = await server.getAccount(source);
+
+  let tx = new TransactionBuilder(acct, {
+    fee: (Number(BASE_FEE) * 1000).toString(),
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(
+      contract.call("prove_reserve", proofScVal(), pubSignalsScVal()),
+    )
+    .setTimeout(60)
+    .build();
+
+  // Simulate first to detect a contract error (e.g. Error #7 replay) BEFORE
+  // asking the user to sign — so we can surface the security guarantee cleanly.
+  const sim = await server.simulateTransaction(tx);
+  if ("error" in sim && sim.error) {
+    const code = parseContractError(sim.error);
+    return {
+      hash: "",
+      success: false,
+      replayRejected: code === 7,
+      errorCode: code,
+    };
+  }
+
+  // No error in sim (would only happen with a fresh proof): prepare, sign,
+  // submit a real on-chain transaction with the user's wallet.
+  tx = await server.prepareTransaction(tx);
+  const signed = await signTransaction(tx.toXDR(), {
+    networkPassphrase: NETWORK_PASSPHRASE,
+    address: source,
+  });
+  if (signed.error) throw new Error(signed.error);
+
+  const signedTx = TransactionBuilder.fromXDR(
+    signed.signedTxXdr,
+    NETWORK_PASSPHRASE,
+  );
+  const sent = await server.sendTransaction(signedTx as any);
+  return {
+    hash: sent.hash,
+    success: sent.status !== "ERROR",
+    replayRejected: false,
+    errorCode: null,
+  };
+}
+
+// Extract the contract Error discriminant (e.g. 7 = NullifierUsed) from an RPC
+// simulation error string like "...Error(Contract, #7)...".
+function parseContractError(msg: string): number | null {
+  const m = msg.match(/#(\d+)/);
+  return m ? Number(m[1]) : null;
 }

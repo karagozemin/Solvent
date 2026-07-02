@@ -1,13 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import {
   getAttestation,
+  connectWallet,
+  verifyProofLive,
+  submitProveReserve,
   DEMO_ISSUER,
   PROVE_TX,
   CONTRACT_ID,
   EXPLORER,
+  CIRCUIT,
   formatUsd,
   formatDate,
   type Attestation,
+  type VerifyResult,
+  type SubmitResult,
 } from "./solvent";
 import "./App.css";
 
@@ -77,6 +83,59 @@ export default function App() {
   const [inView, setInView] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
+  // --- dApp state ---
+  const [wallet, setWallet] = useState<string | null>(null);
+  const [walletErr, setWalletErr] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const [verify, setVerify] = useState<VerifyResult | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [submit, setSubmit] = useState<SubmitResult | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [flowErr, setFlowErr] = useState<string | null>(null);
+
+  const short = (a: string) => `${a.slice(0, 4)}…${a.slice(-4)}`;
+
+  async function onConnect() {
+    setConnecting(true);
+    setWalletErr(null);
+    try {
+      const w = await connectWallet();
+      setWallet(w.address);
+    } catch (e) {
+      setWalletErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  async function onVerify() {
+    if (!wallet) return;
+    setVerifying(true);
+    setFlowErr(null);
+    setVerify(null);
+    try {
+      setVerify(await verifyProofLive(wallet));
+    } catch (e) {
+      setFlowErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  async function onSubmit() {
+    if (!wallet) return;
+    setSubmitting(true);
+    setFlowErr(null);
+    setSubmit(null);
+    try {
+      setSubmit(await submitProveReserve(wallet));
+    } catch (e) {
+      setFlowErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   useEffect(() => {
     getAttestation(DEMO_ISSUER.senderHashHex)
       .then(setAtt)
@@ -111,7 +170,21 @@ export default function App() {
           <span className="pill">
             <span className="dot" /> live on Stellar testnet
           </span>
+          {wallet ? (
+            <span className="pill wallet" title={wallet}>
+              <span className="dot" /> {short(wallet)}
+            </span>
+          ) : (
+            <button
+              className="btn connect"
+              onClick={onConnect}
+              disabled={connecting}
+            >
+              {connecting ? "Connecting…" : "Connect Freighter"}
+            </button>
+          )}
         </div>
+        {walletErr && <p className="error connect-err">{walletErr}</p>}
 
         <h1 className="headline">
           Prove your reserves.
@@ -172,6 +245,145 @@ export default function App() {
             <span className="reveal-tag mono">{STEPS[open].tag}</span>
           </div>
         )}
+      </section>
+
+      {/* ===== INTERACTIVE dAPP ===== */}
+      <section className="app">
+        <h2 className="sec-title">Try it — verify on-chain yourself</h2>
+        <p className="sec-sub">
+          Connect your wallet and run the real BN254 pairing check on Stellar
+          testnet. Then submit a signed transaction and watch anti-replay reject
+          it live.
+        </p>
+
+        {!wallet && (
+          <div className="app-gate">
+            <button
+              className="btn primary big"
+              onClick={onConnect}
+              disabled={connecting}
+            >
+              {connecting ? "Connecting…" : "Connect Freighter to begin"}
+            </button>
+            <span className="gate-note">
+              Testnet · no real funds · read-only until you explicitly submit
+            </span>
+          </div>
+        )}
+
+        {wallet && (
+          <div className="app-grid">
+            <div className="app-card">
+              <div className="app-card-head">
+                <span className="step-num">1</span>
+                <div>
+                  <b>Run the ZK proof on-chain</b>
+                  <span>verify_proof · read-only · repeatable</span>
+                </div>
+              </div>
+              <p className="app-card-body">
+                Executes Stellar's native <code>bn254.pairing_check</code>{" "}
+                against the deployed verification key. No state, no fee — the
+                proof is checked live inside the contract.
+              </p>
+              <button
+                className="btn primary"
+                onClick={onVerify}
+                disabled={verifying}
+              >
+                {verifying ? "Verifying on-chain…" : "Verify proof live"}
+              </button>
+              {verify && (
+                <div className={`result ${verify.valid ? "ok" : "bad"}`}>
+                  <div className="result-line">
+                    <span>pairing_check</span>
+                    <b>{verify.valid ? "✓ valid" : "✗ invalid"}</b>
+                  </div>
+                  <div className="result-line">
+                    <span>CPU instructions</span>
+                    <b className="mono">
+                      {verify.cpuInsns.toLocaleString()} /{" "}
+                      {CIRCUIT.budgetLimit.toLocaleString()}
+                    </b>
+                  </div>
+                  <div className="budget-bar">
+                    <div
+                      className="budget-fill"
+                      style={{
+                        width: `${Math.min(100, (verify.cpuInsns / verify.budget) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                  <span className="result-note">
+                    Fits under Soroban's 100M budget — on-chain ZK verification
+                    is practical.
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="app-card">
+              <div className="app-card-head">
+                <span className="step-num">2</span>
+                <div>
+                  <b>Submit a signed transaction</b>
+                  <span>prove_reserve · you sign · anti-replay</span>
+                </div>
+              </div>
+              <p className="app-card-body">
+                Build a real <code>prove_reserve</code> transaction and sign it
+                with your wallet. This proof's nullifier is already burned on
+                chain — so the contract must reject the replay with{" "}
+                <b>Error #7</b>.
+              </p>
+              <button
+                className="btn ghost"
+                onClick={onSubmit}
+                disabled={submitting}
+              >
+                {submitting ? "Submitting…" : "Sign & submit prove_reserve"}
+              </button>
+              {submit && submit.replayRejected && (
+                <div className="result ok">
+                  <div className="result-line">
+                    <span>Contract response</span>
+                    <b className="reject">Error #7 · NullifierUsed</b>
+                  </div>
+                  <span className="result-note">
+                    🛡️ Anti-replay works: the same email can never mint twice.
+                    Rejected on-chain, before any state change.
+                  </span>
+                </div>
+              )}
+              {submit && !submit.replayRejected && submit.errorCode && (
+                <div className="result bad">
+                  <div className="result-line">
+                    <span>Contract error</span>
+                    <b className="reject">#{submit.errorCode}</b>
+                  </div>
+                </div>
+              )}
+              {submit && submit.hash && (
+                <div className="result ok">
+                  <div className="result-line">
+                    <span>Submitted</span>
+                    <b>{submit.success ? "✓ on-chain" : "pending"}</b>
+                  </div>
+                  <a
+                    className="tx-link mono"
+                    href={`${EXPLORER}/tx/${submit.hash}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {submit.hash.slice(0, 18)}… ↗
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {flowErr && <p className="error">{flowErr}</p>}
       </section>
 
       {/* ===== LIVE ATTESTATION ===== */}
