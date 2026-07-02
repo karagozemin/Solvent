@@ -19,7 +19,7 @@
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype,
     crypto::bn254::{Bn254Fr, Bn254G1Affine, Bn254G2Affine},
-    Bytes, BytesN, Env, U256, Vec,
+    symbol_short, Address, Bytes, BytesN, Env, String, U256, Vec,
 };
 
 // BN254 base field modulus q (Fq) — used for G1 point negation (x, y) -> (x, q-y).
@@ -49,10 +49,34 @@ pub struct Proof {
     pub c: BytesN<64>,          // G1
 }
 
+// A journal field (pubkey_hash / sender_hash / nullifier) as a 32-byte key.
+// Public signals are field elements < r, so 32 big-endian bytes hold them.
+pub type Hash32 = BytesN<32>;
+
+#[contracttype]
+#[derive(Clone)]
+pub struct IssuerInfo {
+    pub name: String,
+    pub registered_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct Attestation {
+    pub threshold: U256,   // the reserve floor PROVEN (balance stays hidden)
+    pub timestamp: u64,    // email Date, seconds
+    pub nullifier: Hash32, // the email that produced this attestation
+}
+
 #[contracttype]
 #[derive(Clone)]
 enum DataKey {
-    Vkey,
+    Admin,               // Address — onboarding authority
+    Vkey,                // VerificationKey
+    PubkeyHash,          // Hash32 — gmail DKIM key hash (init + setter)
+    Issuer(Hash32),      // sender_hash -> IssuerInfo (registry)
+    Nullifier(Hash32),   // nullifier -> () (anti-replay set)
+    Attestation(Hash32), // sender_hash -> Attestation (latest reserve)
 }
 
 #[contracterror]
@@ -61,27 +85,146 @@ pub enum Error {
     NotInitialized = 1,
     AlreadyInitialized = 2,
     BadPublicInputLen = 3,
+    InvalidProof = 4,       // pairing_check failed
+    WrongPubkey = 5,        // pubkey_hash != stored gmail key hash
+    IssuerNotRegistered = 6,
+    NullifierUsed = 7,      // replay: this email was already used
 }
+
+// Journal indices (snarkjs public.json order: outputs first, then inputs):
+//   [0] pubkey_hash  [1] sender_hash  [2] nullifier
+//   [3] threshold_out [4] timestamp_out [5] threshold [6] timestamp
+const J_PUBKEY_HASH: u32 = 0;
+const J_SENDER_HASH: u32 = 1;
+const J_NULLIFIER: u32 = 2;
+const J_THRESHOLD: u32 = 5;
+const J_TIMESTAMP: u32 = 6;
 
 #[contract]
 pub struct MintGuard;
 
 #[contractimpl]
 impl MintGuard {
-    /// Store the verification key (once). Kept in storage rather than hardcoded
-    /// so Task-B circuit changes only require `set_vkey`, not a redeploy.
-    pub fn init(env: Env, vk: VerificationKey) -> Result<(), Error> {
+    /// One-time setup: admin, verification key, and the expected gmail DKIM
+    /// pubkey hash. vkey + pubkey_hash live in storage (not hardcoded) so key
+    /// rotation / circuit changes need a setter call, not a redeploy.
+    pub fn init(
+        env: Env,
+        admin: Address,
+        vk: VerificationKey,
+        pubkey_hash: Hash32,
+    ) -> Result<(), Error> {
         if env.storage().instance().has(&DataKey::Vkey) {
             return Err(Error::AlreadyInitialized);
         }
+        env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage().instance().set(&DataKey::Vkey, &vk);
+        env.storage().instance().set(&DataKey::PubkeyHash, &pubkey_hash);
+        Ok(())
+    }
+
+    /// Rotate the verification key (Task-B circuit change). Admin-gated.
+    pub fn set_vkey(env: Env, vk: VerificationKey) -> Result<(), Error> {
+        Self::require_admin(&env)?;
         env.storage().instance().set(&DataKey::Vkey, &vk);
         Ok(())
     }
 
-    /// Allow updating the vkey (Task-B rotation). No auth in this skeleton —
-    /// TODO(prod): gate behind an admin address.
-    pub fn set_vkey(env: Env, vk: VerificationKey) {
-        env.storage().instance().set(&DataKey::Vkey, &vk);
+    /// Rotate the expected gmail DKIM pubkey hash (Google key rotation). Admin.
+    pub fn set_pubkey_hash(env: Env, pubkey_hash: Hash32) -> Result<(), Error> {
+        Self::require_admin(&env)?;
+        env.storage().instance().set(&DataKey::PubkeyHash, &pubkey_hash);
+        Ok(())
+    }
+
+    /// Onboard an issuer: bind a sender_hash (Poseidon of the From address) to
+    /// a human label. Admin-gated. IMPORTANT: the admin only attests WHO may
+    /// register (their real gmail); it CANNOT forge a reserve — an attestation
+    /// is only written when a valid ZK proof passes. Onboarding is centralized;
+    /// correctness is enforced by the proof, not the admin.
+    pub fn register_issuer(
+        env: Env,
+        sender_hash: Hash32,
+        name: String,
+    ) -> Result<(), Error> {
+        Self::require_admin(&env)?;
+        let info = IssuerInfo {
+            name,
+            registered_at: env.ledger().timestamp(),
+        };
+        env.storage().persistent().set(&DataKey::Issuer(sender_hash), &info);
+        Ok(())
+    }
+
+    /// THE CORE FLOW: verify a reserve proof and record an attestation.
+    /// Checks-effects: ALL checks pass before ANY state write.
+    pub fn prove_reserve(
+        env: Env,
+        proof: Proof,
+        pub_signals: Vec<U256>,
+    ) -> Result<(), Error> {
+        // --- CHECK 1: the Groth16 proof is valid (pairing_check). ---
+        if !Self::verify_proof(env.clone(), proof, pub_signals.clone())? {
+            return Err(Error::InvalidProof);
+        }
+
+        // --- CHECK 2: gmail signed it (pubkey_hash matches stored key). ---
+        let stored_pk: Hash32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::PubkeyHash)
+            .ok_or(Error::NotInitialized)?;
+        let pk = u256_to_hash32(&env, &pub_signals.get(J_PUBKEY_HASH).unwrap());
+        if pk != stored_pk {
+            return Err(Error::WrongPubkey);
+        }
+
+        // --- CHECK 3: the sender is a registered issuer. ---
+        let sender = u256_to_hash32(&env, &pub_signals.get(J_SENDER_HASH).unwrap());
+        if !env.storage().persistent().has(&DataKey::Issuer(sender.clone())) {
+            return Err(Error::IssuerNotRegistered);
+        }
+
+        // --- CHECK 4: this email was not used before (anti-replay). ---
+        let nullifier = u256_to_hash32(&env, &pub_signals.get(J_NULLIFIER).unwrap());
+        if env.storage().persistent().has(&DataKey::Nullifier(nullifier.clone())) {
+            return Err(Error::NullifierUsed);
+        }
+
+        // --- EFFECTS: all checks passed; now write state. ---
+        env.storage().persistent().set(&DataKey::Nullifier(nullifier.clone()), &true);
+
+        let threshold = pub_signals.get(J_THRESHOLD).unwrap();
+        let timestamp = u256_to_u64(&pub_signals.get(J_TIMESTAMP).unwrap());
+        let att = Attestation { threshold, timestamp, nullifier };
+        env.storage().persistent().set(&DataKey::Attestation(sender.clone()), &att);
+
+        // --- EVENT ---
+        env.events().publish(
+            (symbol_short!("reserve"), sender),
+            (att.threshold, att.timestamp),
+        );
+        Ok(())
+    }
+
+    /// Read-only: latest attestation for an issuer (demo / jury).
+    pub fn get_attestation(env: Env, sender_hash: Hash32) -> Option<Attestation> {
+        env.storage().persistent().get(&DataKey::Attestation(sender_hash))
+    }
+
+    /// Read-only: is this issuer registered?
+    pub fn is_registered(env: Env, sender_hash: Hash32) -> bool {
+        env.storage().persistent().has(&DataKey::Issuer(sender_hash))
+    }
+
+    fn require_admin(env: &Env) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+        Ok(())
     }
 
     /// THE SINGLE TARGET: verify a Groth16 proof against the stored vkey and the
@@ -155,6 +298,36 @@ impl MintGuard {
         let zero = BytesN::from_array(&env, &[0u8; 64]);
         sum.to_bytes() == zero
     }
+}
+
+/// U256 -> 32-byte big-endian key. Public signals are field elements < r, so
+/// they always fit in 32 bytes; to_be_bytes may be shorter, so we right-align.
+fn u256_to_hash32(env: &Env, x: &U256) -> Hash32 {
+    let be = x.to_be_bytes(); // Bytes, len <= 32
+    let mut out = [0u8; 32];
+    let len = be.len() as usize;
+    let start = 32 - len;
+    let mut i = 0usize;
+    while i < len {
+        out[start + i] = be.get(i as u32).unwrap();
+        i += 1;
+    }
+    BytesN::from_array(env, &out)
+}
+
+/// U256 -> u64 (timestamp). Takes the low 8 bytes; timestamps fit easily.
+fn u256_to_u64(x: &U256) -> u64 {
+    let be = x.to_be_bytes();
+    let len = be.len() as u32;
+    let mut v: u64 = 0;
+    let take = if len > 8 { 8 } else { len };
+    let mut i = 0u32;
+    while i < take {
+        let byte = be.get(len - take + i).unwrap();
+        v = (v << 8) | (byte as u64);
+        i += 1;
+    }
+    v
 }
 
 /// vk_x = IC[0] + sum_i pub_signals[i] * IC[i+1], all in G1.
