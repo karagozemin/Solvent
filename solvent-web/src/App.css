@@ -6,7 +6,12 @@
   max-width: 1180px;
   margin: 0 auto;
   padding: 0 26px 100px;
+  /* Present the landing at a 110% "zoomed-in" scale — matches the browser
+     zoom the design reads best at. Only affects the landing (.page); the
+     Console has its own root and is untouched. */
+  zoom: 1.1;
 }
+
 
 /* ---------------- buttons ---------------- */
 .btn {
