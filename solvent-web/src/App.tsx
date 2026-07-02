@@ -27,7 +27,9 @@ import {
   type VerifyResult,
   type SubmitResult,
 } from "./solvent";
+import DarkVeil from "./DarkVeil";
 import "./App.css";
+
 
 /* ================================================================== */
 /*  Helpers                                                            */
@@ -70,6 +72,19 @@ const NAV: { id: View; label: string; icon: string; hint: string }[] = [
 export default function App() {
   const [view, setView] = useState<View>("overview");
   const [navOpen, setNavOpen] = useState(false);
+
+  // landing → app gate
+  const [entered, setEntered] = useState(false);
+  const [intro, setIntro] = useState(false);
+  function enterApp(target: View = "overview") {
+    setView(target);
+    setIntro(true);
+    window.setTimeout(() => {
+      setEntered(true);
+      window.setTimeout(() => setIntro(false), 620);
+    }, 1180);
+  }
+
 
   // attestation
   const [att, setAtt] = useState<Attestation | null>(null);
@@ -196,10 +211,21 @@ export default function App() {
 
   const active = NAV.find((n) => n.id === view)!;
 
+  if (!entered) {
+    return (
+      <>
+        <Landing att={att} onEnter={enterApp} />
+        {intro && <IntroCurtain />}
+      </>
+    );
+  }
+
   return (
     <div className="shell">
+      {intro && <IntroCurtain fading />}
       <div className="bg-orb orb-1" aria-hidden />
       <div className="bg-orb orb-2" aria-hidden />
+
 
       {/* ===================== SIDEBAR ===================== */}
       <aside className={`side ${navOpen ? "open" : ""}`}>
@@ -1167,3 +1193,178 @@ function Fact({ k, v }: { k: string; v: string }) {
     </div>
   );
 }
+
+/* ================================================================== */
+/*  LANDING PAGE                                                      */
+/* ================================================================== */
+
+function Landing({
+  att,
+  onEnter,
+}: {
+  att: Attestation | null;
+  onEnter: (v: View) => void;
+}) {
+  return (
+    <div className="lp">
+      <div className="lp-veil" aria-hidden>
+        <DarkVeil
+          hueShift={222}
+          speed={0.5}
+          warpAmount={0.6}
+          noiseIntensity={0.02}
+          scanlineIntensity={0.05}
+          scanlineFrequency={2}
+          resolutionScale={1}
+        />
+      </div>
+      <div className="lp-veil-fade" aria-hidden />
+      <div className="lp-grid-bg" aria-hidden />
+
+
+      <header className="lp-nav">
+        <div className="lp-brand">
+          <img src="/solvent.png" alt="" />
+          <b>Solvent</b>
+        </div>
+        <nav className="lp-links">
+          <a href="#how">How it works</a>
+          <a href="#proof">Live proof</a>
+          <a
+            href={`${EXPLORER}/contract/${CONTRACT_ID}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Contract ↗
+          </a>
+        </nav>
+        <button className="btn btn-primary btn-sm" onClick={() => onEnter("overview")}>
+          Launch app
+        </button>
+      </header>
+
+      <main className="lp-hero">
+        <span className="lp-badge">
+          <span className="badge-dot" /> Live on Stellar testnet · Groth16 on-chain
+        </span>
+        <h1 className="lp-title">
+          Prove your reserves.
+          <br />
+          <span className="grad">Never reveal the balance.</span>
+        </h1>
+        <p className="lp-sub">
+          Solvent lets an issuer prove a bank balance clears a threshold —
+          straight from a real DKIM-signed email — and verifies it on-chain with
+          a native BN254 pairing check. The actual number never leaves the
+          browser.
+        </p>
+        <div className="lp-cta">
+          <button className="btn btn-primary btn-lg" onClick={() => onEnter("verify")}>
+            ⚡ Run the live proof
+          </button>
+          <button className="btn btn-ghost btn-lg" onClick={() => onEnter("overview")}>
+            Explore the console
+          </button>
+        </div>
+
+        <div className="lp-stats">
+          <div className="lp-stat">
+            <b>{att ? formatUsd(att.threshold) : "≥ $1M"}</b>
+            <span>reserve floor proven</span>
+          </div>
+          <div className="lp-stat">
+            <b>{CIRCUIT.constraints.toLocaleString()}</b>
+            <span>circuit constraints</span>
+          </div>
+          <div className="lp-stat">
+            <b>&lt; 100M</b>
+            <span>on-chain CPU budget</span>
+          </div>
+          <div className="lp-stat">
+            <b>0</b>
+            <span>bytes of balance leaked</span>
+          </div>
+        </div>
+      </main>
+
+      <section className="lp-how" id="how">
+        <span className="lp-eyebrow">The mechanism</span>
+        <h2 className="lp-h2">Four honest steps, one on-chain truth</h2>
+        <div className="lp-cards">
+          {[
+            ["✉️", "Real signed email", "A DKIM-signed balance statement from the bank — cryptographic, unforgeable."],
+            ["◎", "In-circuit extraction", "Sender & balance are parsed inside the circuit, hashed with Poseidon."],
+            ["🔐", "Groth16 proof", "A succinct proof that balance ≥ threshold — the number stays private."],
+            ["⛓", "Native verification", "Soroban runs bn254.pairing_check on-chain. No trusted verifier."],
+          ].map(([ic, t, d], i) => (
+            <div className="lp-card" key={i} style={{ ["--d" as string]: `${i * 80}ms` }}>
+              <span className="lp-card-ic">{ic}</span>
+              <b>{t}</b>
+              <p>{d}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="lp-showcase" id="proof">
+        <div className="lp-showcase-copy">
+          <span className="lp-eyebrow">Provably real</span>
+          <h2 className="lp-h2">Not a mock. It lands on testnet.</h2>
+          <p>
+            Connect Freighter and sign a genuine Soroban transaction. The hash
+            resolves on Stellar Expert under your own account — and replaying the
+            same email is rejected by a burned nullifier.
+          </p>
+          <button className="btn btn-primary btn-lg" onClick={() => onEnter("verify")}>
+            Try it yourself →
+          </button>
+        </div>
+        <div className="lp-showcase-card">
+          <div className="lp-sc-head">
+            <span className="net-dot" /> verify_proof · live
+          </div>
+          <div className="lp-sc-row"><span>pairing_check</span><b className="good">✓ valid</b></div>
+          <div className="lp-sc-row"><span>reserve floor</span><b>{att ? formatUsd(att.threshold) : "—"}</b></div>
+          <div className="lp-sc-row"><span>balance disclosed</span><b>🔒 none</b></div>
+          <div className="lp-sc-row"><span>replay attempt</span><b className="reject">Error #7</b></div>
+          <div className="lp-sc-bar"><span style={{ width: "62%" }} /></div>
+          <div className="lp-sc-foot mono">fits Soroban 100M budget</div>
+        </div>
+      </section>
+
+      <footer className="lp-foot">
+        <div className="lp-brand">
+          <img src="/solvent.png" alt="" />
+          <b>Solvent</b>
+        </div>
+        <span>Zero-knowledge proof-of-reserves · Stellar Soroban</span>
+        <button className="btn btn-primary btn-sm" onClick={() => onEnter("overview")}>
+          Launch app
+        </button>
+      </footer>
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  INTRO CURTAIN — landing → app transition                          */
+/* ================================================================== */
+
+function IntroCurtain({ fading }: { fading?: boolean }) {
+  return (
+    <div className={`intro ${fading ? "out" : ""}`}>
+      <div className="intro-core">
+        <div className="intro-logo">
+          <img src="/solvent.png" alt="" />
+          <span className="intro-ring" />
+        </div>
+        <div className="intro-word">Solvent</div>
+        <div className="intro-line">
+          <span className="intro-line-fill" />
+        </div>
+        <div className="intro-cap mono">initializing secure console…</div>
+      </div>
+    </div>
+  );
+}
+

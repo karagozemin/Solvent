@@ -3,29 +3,30 @@
    ============================================================ */
 
 :root {
-  /* base surfaces */
-  --bg: #06070c;
-  --bg-2: #090b12;
-  --surface: #0d1018;
-  --surface-2: #10131d;
-  --surface-3: #151926;
-  --line: #1c2233;
-  --line-2: #262f45;
+  /* base surfaces — deep indigo-black */
+  --bg: #070610;
+  --bg-2: #0b0a17;
+  --surface: #100e1e;
+  --surface-2: #151327;
+  --surface-3: #1b1834;
+  --line: #241f3f;
+  --line-2: #322b57;
 
   /* type */
-  --text: #f2f5fb;
-  --text-2: #aeb7cc;
-  --text-3: #6c7793;
-  --text-faint: #495066;
+  --text: #f4f3fb;
+  --text-2: #b8b4d4;
+  --text-3: #7a7499;
+  --text-faint: #524d70;
 
-  /* brand */
-  --mint: #4bf5b0;
-  --mint-2: #2fe39a;
-  --cyan: #4ad6ff;
-  --blue: #5b8dff;
-  --violet: #9d7bff;
+  /* brand — premium violet ↔ blue */
+  --mint: #7c6cff;       /* primary (violet) */
+  --mint-2: #6a5cf5;     /* primary darker */
+  --cyan: #8b8bff;       /* soft periwinkle */
+  --blue: #4f7bff;       /* electric blue */
+  --violet: #a48bff;     /* light violet */
   --amber: #ffb648;
   --red: #ff6b6b;
+
 
   /* effects */
   --radius: 16px;
@@ -81,9 +82,10 @@ button {
 }
 
 ::selection {
-  background: rgba(75, 245, 176, 0.25);
+  background: rgba(124, 108, 255, 0.35);
   color: #fff;
 }
+
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
