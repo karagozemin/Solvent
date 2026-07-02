@@ -108,9 +108,10 @@
   gap: 8px;
   padding: 20px 16px;
   background: linear-gradient(180deg, rgba(13,16,24,0.9), rgba(9,11,18,0.9));
-  border-right: 1px solid var(--line);
+  border-right: 1px solid var(--line-2);
   backdrop-filter: blur(12px);
 }
+
 
 .side-brand {
   display: flex;
