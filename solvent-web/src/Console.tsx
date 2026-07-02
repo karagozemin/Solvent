@@ -185,9 +185,7 @@ export function Console({ address, setAddress, onExit }: Props) {
       {/* ===================== SIDEBAR ===================== */}
       <aside className={`side ${navOpen ? "open" : ""}`}>
         <button className="side-brand" onClick={onExit} title="Back to landing">
-          <span className="side-seal">
-            <Icon.seal size={20} />
-          </span>
+          <img className="side-logo" src="/logo.png" alt="Solvent" />
           <span className="side-brand-txt">
             <b>Solvent</b>
             <span className="stencil">ZK PROOF-OF-RESERVES</span>

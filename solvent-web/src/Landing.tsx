@@ -20,9 +20,7 @@ export function Landing({ onEnter }: { onEnter: () => void }) {
       {/* ---------- top bar ---------- */}
       <header className="topbar">
         <div className="brand">
-          <span className="brand-seal">
-            <Icon.seal size={22} />
-          </span>
+          <img className="brand-logo" src="/logo.png" alt="Solvent" />
           <span className="brand-word">Solvent</span>
           <span className="brand-reg">®</span>
         </div>

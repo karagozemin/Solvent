@@ -55,7 +55,12 @@
   color: var(--seal);
   background: var(--paper-3);
 }
-.brand-word { font-family: var(--display); font-size: 25px; line-height: 1; }
+.brand-logo {
+  width: 44px; height: 44px; flex: none;
+  object-fit: contain;
+  display: block;
+}
+.brand-word { font-family: var(--display); font-size: 34px; line-height: 1; letter-spacing: -0.01em; }
 .brand-reg { font-size: 11px; color: var(--ink-3); align-self: flex-start; }
 .brand-sub { margin-left: 4px; }
 .topnav { display: flex; gap: 26px; margin-left: auto; }
@@ -396,6 +401,11 @@
   color: var(--seal);
   background: var(--paper-3);
 }
+.side-logo {
+  width: 40px; height: 40px; flex: none;
+  object-fit: contain;
+  display: block;
+}
 .side-brand-txt { display: flex; flex-direction: column; line-height: 1.1; }
 .side-brand-txt b { font-family: var(--display); font-size: 23px; }
 .side-brand-txt .stencil { font-size: 8px; letter-spacing: 0.18em; }
@@ -505,7 +515,7 @@
 .hamb { display: none; flex-direction: column; gap: 4px; background: none; border: none; padding: 6px; }
 .hamb span { width: 20px; height: 2px; background: var(--ink); border-radius: 2px; }
 
-.content { padding: 34px; max-width: 1120px; width: 100%; }
+.content { padding: 34px 48px; width: 100%; }
 .view { display: grid; gap: 26px; }
 .view > * { animation: rise 0.5s cubic-bezier(0.2,0.7,0.2,1) both; }
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
