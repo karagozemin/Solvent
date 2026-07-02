@@ -41,6 +41,9 @@ Cargo.lock
 secrets/
 *_secret*
 
+# ---- Raw email downloads (only the curated fixture in circuits/fixtures is kept) ----
+/*.eml
+
 # ---- OS / editor ----
 .DS_Store
 .vscode/
