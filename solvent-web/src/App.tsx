@@ -426,9 +426,17 @@ export default function App() {
             </div>
           </div>
 
-          {/* proof visual */}
-          <ProofVisual />
+          {/* interactive: email → proof → on-chain, on the FIRST screen */}
+          <HeroDemo
+            wallet={wallet}
+            connecting={connecting}
+            onConnect={onConnect}
+            onVerify={onVerify}
+            verifying={verifying}
+            verify={verify}
+          />
         </section>
+
 
         {/* ===================== STAT STRIP ===================== */}
         <section className="stats">
@@ -992,59 +1000,202 @@ function Fact({
   );
 }
 
-/* Animated hero proof panel */
-function ProofVisual() {
+/* ------------------------------------------------------------------ */
+/*  HeroDemo — interactive email → proof → on-chain, on first screen   */
+/* ------------------------------------------------------------------ */
+
+const PROVE_STEPS = [
+  { k: "Reading DKIM signature", d: `${DKIM.domain} · ${DKIM.algo}` },
+  { k: "Extracting sender (in-circuit regex)", d: "From header → Poseidon" },
+  { k: "Reading signed balance", d: "body hash matched" },
+  { k: "Proving balance ≥ threshold", d: "Groth16 · BN254" },
+];
+
+type Phase = "email" | "proving" | "proved";
+
+function HeroDemo({
+  wallet,
+  connecting,
+  onConnect,
+  onVerify,
+  verifying,
+  verify,
+}: {
+  wallet: string | null;
+  connecting: boolean;
+  onConnect: () => void;
+  onVerify: () => void;
+  verifying: boolean;
+  verify: VerifyResult | null;
+}) {
+  const [phase, setPhase] = useState<Phase>("email");
+  const [active, setActive] = useState(-1);
+
+  // Animate the email → proof pipeline. Proving happens off-chain (honest:
+  // a pre-generated proof is revealed), but the DKIM→sender→balance→π steps
+  // are the real zk-email flow, surfaced so the mechanism is visible.
+  function generate() {
+    if (phase === "proving") return;
+    setPhase("proving");
+    setActive(0);
+    let i = 0;
+    const tick = () => {
+      i += 1;
+      if (i < PROVE_STEPS.length) {
+        setActive(i);
+        setTimeout(tick, 560);
+      } else {
+        setTimeout(() => {
+          setActive(-1);
+          setPhase("proved");
+        }, 480);
+      }
+    };
+    setTimeout(tick, 560);
+  }
+
   return (
-    <div className="proof-visual">
-      <div className="pv-card">
-        <div className="pv-top">
-          <span className="pv-dots">
-            <i /><i /><i />
+    <div className="herodemo">
+      <div className="hd-card">
+        <div className="hd-top">
+          <span className="pv-dots"><i /><i /><i /></span>
+          <span className="hd-steps mono">
+            <span className={phase !== "email" ? "done" : "cur"}>email</span>
+            <span className="sep">→</span>
+            <span className={phase === "proved" ? "done" : phase === "proving" ? "cur" : ""}>proof</span>
+            <span className="sep">→</span>
+            <span className={verify ? "done" : ""}>on-chain</span>
           </span>
-          <span className="pv-label mono">proof.json</span>
         </div>
 
-        <div className="pv-row">
-          <span className="pv-key mono">DKIM</span>
-          <span className="pv-val mono">{DKIM.domain} · verified ✓</span>
-        </div>
-        <div className="pv-row">
-          <span className="pv-key mono">balance</span>
-          <span className="pv-hidden">••••••••</span>
-          <span className="pv-lock">🔒 hidden</span>
-        </div>
-        <div className="pv-row">
-          <span className="pv-key mono">threshold</span>
-          <span className="pv-val mono">≥ $1,000,000</span>
-        </div>
-
-        <div className="pv-divider" />
-
-        <div className="pv-proof">
-          <span className="pv-proof-label mono">π groth16</span>
-          <div className="pv-hexes">
-            {[
-              "0x20445263…d754338",
-              "0x08320016…5887369e",
-              "0x09787604…6141450b",
-            ].map((h) => (
-              <span key={h} className="pv-hex mono">
-                {h}
+        {/* ---- stage: email ---- */}
+        <div className="hd-email">
+          <div className="hd-eml-head">
+            <span className="hd-eml-ic">✉️</span>
+            <div>
+              <b>Balance statement</b>
+              <span className="mono">from: alerts@{DKIM.domain}</span>
+            </div>
+            <span className="hd-eml-verified">DKIM ✓</span>
+          </div>
+          <div className="hd-eml-body">
+            <div className="hd-eml-line">
+              <span>Available balance</span>
+              <span className="hd-eml-bal">
+                {phase === "proved" ? (
+                  <><span className="hd-lock">🔒</span> hidden</>
+                ) : (
+                  "••••••••"
+                )}
               </span>
-            ))}
+            </div>
+            <div className="hd-eml-line">
+              <span>Prove floor</span>
+              <b className="mono">≥ $1,000,000</b>
+            </div>
+          </div>
+          <div className="hd-eml-sig mono">
+            dkim-signature: v=1; a={DKIM.algo}; d={DKIM.domain};
+            s={DKIM.selector}; bh={DKIM.bodyHash.slice(0, 18)}…
           </div>
         </div>
 
-        <div className="pv-verify">
-          <span className="pv-verify-dot" />
-          <span className="mono">pairing_check() → true</span>
-          <span className="pv-verify-badge">on-chain</span>
+        {/* ---- stage: proving pipeline ---- */}
+        {phase !== "email" && (
+          <div className="hd-pipe">
+            {PROVE_STEPS.map((s, i) => {
+              const done = phase === "proved" || i < active;
+              const cur = phase === "proving" && i === active;
+              return (
+                <div
+                  key={s.k}
+                  className={`hd-pstep ${done ? "done" : ""} ${cur ? "cur" : ""}`}
+                >
+                  <span className="hd-pmark">
+                    {done ? "✓" : cur ? <span className="spinner tiny" /> : ""}
+                  </span>
+                  <div className="hd-ptext">
+                    <b>{s.k}</b>
+                    <span className="mono">{s.d}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ---- stage: proof ready ---- */}
+        {phase === "proved" && (
+          <div className="hd-proof">
+            <div className="hd-proof-head">
+              <span className="pv-proof-label mono">π groth16</span>
+              <span className="hd-proof-ok">ready</span>
+            </div>
+            <div className="pv-hexes">
+              {["0x20445263…d754338", "0x09787604…6141450b"].map((h) => (
+                <span key={h} className="pv-hex mono">{h}</span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ---- verify result ---- */}
+        {verify && (
+          <div className="hd-verify">
+            <span className="hd-verify-dot" />
+            <span className="mono">pairing_check() → {verify.valid ? "true" : "false"}</span>
+            <span className="hd-verify-badge">
+              {verify.cpuInsns.toLocaleString()} insns
+            </span>
+          </div>
+        )}
+
+        {/* ---- action ---- */}
+        <div className="hd-action">
+          {phase !== "proved" ? (
+            <button
+              className="btn btn-primary hd-btn"
+              onClick={generate}
+              disabled={phase === "proving"}
+            >
+              {phase === "proving" ? (
+                <><span className="spinner" /> Generating proof…</>
+              ) : (
+                "Generate proof from email"
+              )}
+            </button>
+          ) : !wallet ? (
+            <button
+              className="btn btn-primary hd-btn"
+              onClick={onConnect}
+              disabled={connecting}
+            >
+              {connecting ? "Connecting…" : "Connect wallet to verify"}
+            </button>
+          ) : verify ? (
+            <a className="btn btn-ghost hd-btn" href="#try">
+              Sign it on-chain yourself ↓
+            </a>
+          ) : (
+            <button
+              className="btn btn-primary hd-btn"
+              onClick={onVerify}
+              disabled={verifying}
+            >
+              {verifying ? (
+                <><span className="spinner" /> Verifying on Stellar…</>
+              ) : (
+                "Verify on-chain (live)"
+              )}
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="pv-float pv-float-1 mono">BN254</div>
-      <div className="pv-float pv-float-2 mono">Poseidon²</div>
+      <div className="pv-float pv-float-1 mono">zk-email</div>
+      <div className="pv-float pv-float-2 mono">BN254</div>
       <div className="pv-float pv-float-3 mono">Soroban</div>
     </div>
   );
 }
+
