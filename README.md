@@ -2,7 +2,7 @@
   <img src="solvent.png" alt="Solvent" width="200">
 </p>
 
-<h1 align="center">Solvent</h1>
+<h1>Solvent</h1>
 
 **Zero-knowledge proof-of-reserves on Stellar.** An issuer proves — from a real,
 DKIM-signed bank email — that their reserve is **at least** some threshold,
