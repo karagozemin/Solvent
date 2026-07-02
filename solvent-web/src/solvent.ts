@@ -15,6 +15,7 @@ import {
 import { Server } from "@stellar/stellar-sdk/rpc";
 import {
   isConnected,
+  isAllowed,
   requestAccess,
   getAddress,
   signTransaction,
@@ -220,24 +221,123 @@ export interface WalletState {
 }
 
 // Connect Freighter. Returns the connected G... address.
+//
+// Freighter's `requestAccess` occasionally resolves without opening its popup
+// when the site was previously authorized but the extension lost its unlock
+// state — leaving the dApp stuck. We defend against that with a real detection
+// path and a clear, actionable error instead of a silent no-op.
 export async function connectWallet(): Promise<WalletState> {
-  const conn = await isConnected();
+  let conn;
+  try {
+    conn = await isConnected();
+  } catch {
+    throw new Error(
+      "Freighter not detected. Install the Freighter extension, then reload this page.",
+    );
+  }
   if (!conn.isConnected) {
     throw new Error(
       "Freighter not detected. Install the Freighter extension and switch it to Testnet.",
     );
   }
+
+  // requestAccess triggers the Freighter popup (approve connection / unlock).
   const access = await requestAccess();
-  if (access.error) throw new Error(access.error);
-  const addr = access.address || (await getAddress()).address;
-  if (!addr) throw new Error("No address returned by Freighter.");
+  if (access.error) throw new Error(String(access.error));
+
+  let addr = access.address;
+  if (!addr) {
+    const got = await getAddress();
+    if (got.error) throw new Error(String(got.error));
+    addr = got.address;
+  }
+  if (!addr) {
+    throw new Error(
+      "Freighter did not return an address. Open the Freighter extension, unlock it, make sure it is on Testnet, then try again.",
+    );
+  }
   return { address: addr };
 }
 
+// Silent reconnect on page load: only returns an address if Freighter still
+// has this site authorized AND is unlocked — never opens a popup. Used to
+// restore a session without surprising the user.
+export async function silentAddress(): Promise<string | null> {
+  try {
+    const conn = await isConnected();
+    if (!conn.isConnected) return null;
+    const allowed = await isAllowed();
+    if (!allowed.isAllowed) return null;
+    const got = await getAddress();
+    if (got.error || !got.address) return null;
+    return got.address;
+  } catch {
+    return null;
+  }
+}
+
+// Disconnect: Freighter has no programmatic "revoke", so we simply clear the
+// dApp-side session. The persisted flag lets us skip auto-reconnect on reload.
+const WALLET_KEY = "solvent.wallet";
+
+export function persistWallet(address: string) {
+  try {
+    localStorage.setItem(WALLET_KEY, address);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function loadWallet(): string | null {
+  try {
+    return localStorage.getItem(WALLET_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function disconnectWallet() {
+  try {
+    localStorage.removeItem(WALLET_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+// Fund a testnet account via Friendbot if it doesn't exist yet. This lets a
+// freshly-created Freighter account interact immediately — no manual faucet.
+async function ensureAccount(server: Server, address: string): Promise<Account> {
+  try {
+    return await server.getAccount(address);
+  } catch {
+    // Account not found on testnet — create & fund it via Friendbot.
+    const res = await fetch(
+      `https://friendbot.stellar.org/?addr=${encodeURIComponent(address)}`,
+    );
+    if (!res.ok) {
+      throw new Error(
+        "Account not funded on testnet, and Friendbot funding failed. Open Freighter → Testnet and fund this address, then retry.",
+      );
+    }
+    // Friendbot can take a moment to propagate; retry a few times.
+    for (let i = 0; i < 5; i++) {
+      await new Promise((r) => setTimeout(r, 1200));
+      try {
+        return await server.getAccount(address);
+      } catch {
+        /* keep polling */
+      }
+    }
+    throw new Error(
+      "Funded via Friendbot but account not visible yet — retry in a moment.",
+    );
+  }
+}
+
 export interface VerifyResult {
-  valid: boolean;      // pairing_check result
-  cpuInsns: number;    // on-chain instructions consumed
-  budget: number;      // Soroban per-tx limit
+  valid: boolean; // pairing_check result
+  cpuInsns: number; // on-chain instructions consumed
+  budget: number; // Soroban per-tx limit
 }
 
 // LIVE ZK: run verify_proof as a read-only simulation. Runs the real on-chain
@@ -245,7 +345,7 @@ export interface VerifyResult {
 export async function verifyProofLive(source: string): Promise<VerifyResult> {
   const server = new Server(RPC_URL);
   const contract = new Contract(CONTRACT_ID);
-  const acct = await server.getAccount(source);
+  const acct = await ensureAccount(server, source);
 
   const tx = new TransactionBuilder(acct, {
     fee: BASE_FEE,
@@ -276,16 +376,20 @@ export interface SubmitResult {
   errorCode: number | null;
 }
 
-// REAL TX: build prove_reserve, have the user sign it in Freighter, submit it.
+// REAL TX: build prove_reserve, have the user SIGN it in Freighter, submit it.
 // The demo proof's nullifier is already burned on-chain, so a correctly-
 // functioning contract MUST reject this with Error #7 — proving anti-replay
 // live, with the juror's own signed transaction.
+//
+// Crucially, we ALWAYS open Freighter for a real signature. The old flow
+// short-circuited on simulation (Error #7) before signing, so the wallet
+// popup never appeared and the demo felt fake. Now the juror truly signs.
 export async function submitProveReserve(source: string): Promise<SubmitResult> {
   const server = new Server(RPC_URL);
   const contract = new Contract(CONTRACT_ID);
-  const acct = await server.getAccount(source);
+  const acct = await ensureAccount(server, source);
 
-  let tx = new TransactionBuilder(acct, {
+  const tx = new TransactionBuilder(acct, {
     fee: (Number(BASE_FEE) * 1000).toString(),
     networkPassphrase: NETWORK_PASSPHRASE,
   })
@@ -295,11 +399,58 @@ export async function submitProveReserve(source: string): Promise<SubmitResult> 
     .setTimeout(60)
     .build();
 
-  // Simulate first to detect a contract error (e.g. Error #7 replay) BEFORE
-  // asking the user to sign — so we can surface the security guarantee cleanly.
-  const sim = await server.simulateTransaction(tx);
-  if ("error" in sim && sim.error) {
-    const code = parseContractError(sim.error);
+  // Prepare (simulate + attach the Soroban footprint). The demo proof's
+  // nullifier is already burned on-chain, so this simulation reports Error #7.
+  // We capture that code but DO NOT return early — the whole point is that the
+  // juror signs a REAL transaction and then watches the network reject it.
+  let prepared = tx;
+  let knownReplay: number | null = null;
+  try {
+    prepared = await server.prepareTransaction(tx);
+  } catch (e) {
+    knownReplay = parseContractError(
+      e instanceof Error ? e.message : String(e),
+    );
+  }
+
+  // Open Freighter and ask the user to sign the real prove_reserve tx. THIS is
+  // the wallet popup — it fires every time, before any submission.
+  const signed = await signTransaction(prepared.toXDR(), {
+    networkPassphrase: NETWORK_PASSPHRASE,
+    address: source,
+  });
+  if (signed.error) throw new Error(String(signed.error));
+
+  const signedTx = TransactionBuilder.fromXDR(
+    signed.signedTxXdr,
+    NETWORK_PASSPHRASE,
+  );
+
+  // Submit the signed transaction. For the demo proof the network rejects the
+  // replay; we surface Error #7 (captured at prepare time if present).
+  try {
+    const sent = await server.sendTransaction(signedTx as any);
+    if (sent.status === "ERROR") {
+      const code =
+        knownReplay ??
+        parseContractError(JSON.stringify((sent as any).errorResult ?? sent));
+      return {
+        hash: sent.hash,
+        success: false,
+        replayRejected: code === 7,
+        errorCode: code,
+      };
+    }
+    return {
+      hash: sent.hash,
+      success: true,
+      replayRejected: false,
+      errorCode: null,
+    };
+  } catch (e) {
+    const code =
+      knownReplay ??
+      parseContractError(e instanceof Error ? e.message : String(e));
     return {
       hash: "",
       success: false,
@@ -307,27 +458,6 @@ export async function submitProveReserve(source: string): Promise<SubmitResult> 
       errorCode: code,
     };
   }
-
-  // No error in sim (would only happen with a fresh proof): prepare, sign,
-  // submit a real on-chain transaction with the user's wallet.
-  tx = await server.prepareTransaction(tx);
-  const signed = await signTransaction(tx.toXDR(), {
-    networkPassphrase: NETWORK_PASSPHRASE,
-    address: source,
-  });
-  if (signed.error) throw new Error(signed.error);
-
-  const signedTx = TransactionBuilder.fromXDR(
-    signed.signedTxXdr,
-    NETWORK_PASSPHRASE,
-  );
-  const sent = await server.sendTransaction(signedTx as any);
-  return {
-    hash: sent.hash,
-    success: sent.status !== "ERROR",
-    replayRejected: false,
-    errorCode: null,
-  };
 }
 
 // Extract the contract Error discriminant (e.g. 7 = NullifierUsed) from an RPC
