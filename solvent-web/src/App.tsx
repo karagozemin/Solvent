@@ -29,11 +29,13 @@ import {
 } from "./solvent";
 import "./App.css";
 
-/* ------------------------------------------------------------------ */
-/*  Small hooks / helpers                                             */
-/* ------------------------------------------------------------------ */
+/* ================================================================== */
+/*  Helpers                                                            */
+/* ================================================================== */
 
-function useCountUp(target: number, run: boolean, ms = 1600) {
+const short = (a: string, n = 4) => `${a.slice(0, n)}…${a.slice(-n)}`;
+
+function useCountUp(target: number, run: boolean, ms = 1300) {
   const [v, setV] = useState(0);
   useEffect(() => {
     if (!run) return;
@@ -52,97 +54,36 @@ function useCountUp(target: number, run: boolean, ms = 1600) {
   return v;
 }
 
-function useInView<T extends HTMLElement>(threshold = 0.25) {
-  const ref = useRef<T>(null);
-  const [seen, setSeen] = useState(false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      ([e]) => {
-        if (e.isIntersecting) {
-          setSeen(true);
-          obs.disconnect();
-        }
-      },
-      { threshold },
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [threshold]);
-  return [ref, seen] as const;
-}
+type View = "overview" | "verify" | "issuers" | "onchain";
 
-const short = (a: string, n = 4) => `${a.slice(0, n)}…${a.slice(-n)}`;
-
-/* ------------------------------------------------------------------ */
-/*  Static content                                                    */
-/* ------------------------------------------------------------------ */
-
-const STEPS = [
-  {
-    n: "01",
-    kicker: "Source of truth",
-    title: "A DKIM-signed bank email",
-    body: "The issuer's bank sends a balance statement, cryptographically signed by the provider's DKIM key. The RSA-2048 signature — not a screenshot — is what Solvent trusts.",
-    tags: [`${DKIM.domain} · ${DKIM.algo}`, "RSA-2048"],
-  },
-  {
-    n: "02",
-    kicker: "Off-chain prover",
-    title: "Groth16 proof over the signature",
-    body: "Inside the circuit: verify the DKIM signature, extract the sender from the signed header via regex, read the balance from the signed body, and prove balance ≥ threshold — all in zero knowledge.",
-    tags: [`${CIRCUIT.constraints.toLocaleString()} constraints`, "BN254 · Circom"],
-  },
-  {
-    n: "03",
-    kicker: "On-chain verifier",
-    title: "Native BN254 pairing_check",
-    body: "Stellar's native pairing host functions verify the proof inside a Soroban contract — and it fits under the 100M instruction budget. On-chain proof-of-reserves is practical, not theoretical.",
-    tags: ["Soroban host fns", "< 100M budget"],
-  },
-  {
-    n: "04",
-    kicker: "Settlement",
-    title: "Attestation, balance hidden",
-    body: "The contract records only that this issuer proved reserves ≥ threshold, at this time. The actual balance never touches the chain, and the email's nullifier blocks any replay.",
-    tags: ["selective disclosure", "anti-replay"],
-  },
+const NAV: { id: View; label: string; icon: string; hint: string }[] = [
+  { id: "overview", label: "Overview", icon: "◈", hint: "Live reserve status" },
+  { id: "verify", label: "Verify reserves", icon: "⚡", hint: "Run the ZK flow" },
+  { id: "issuers", label: "Attestations", icon: "🏦", hint: "Registered issuers" },
+  { id: "onchain", label: "On-chain", icon: "⛓", hint: "Contract & journal" },
 ];
 
-const FAQ = [
-  {
-    q: "How can you trust a number the issuer sends?",
-    a: "You don't trust the issuer — you trust their bank's RSA signature, which is verified inside the SNARK. The contract never sees a self-declared number; it only accepts a proof bound to a valid DKIM signature from a pinned provider key.",
-  },
-  {
-    q: "What stops someone spoofing the sender?",
-    a: "The From address is extracted by in-circuit regex over the DKIM-signed header — not supplied by the prover. Its Poseidon hash must match a registered issuer, so a forged sender simply won't verify.",
-  },
-  {
-    q: "Can the same email be reused to mint twice?",
-    a: "No. Each email yields a nullifier = Poseidon²(signature) that is burned on-chain the first time. A replay is rejected with Error #7 before any state changes — you can trigger this yourself below.",
-  },
-  {
-    q: "Is the balance ever exposed?",
-    a: "Never. The public journal contains the threshold, timestamp, sender and key hashes — but the balance itself is not among the seven signals. Only 'balance ≥ threshold' is proven.",
-  },
-];
-
-/* ------------------------------------------------------------------ */
-/*  App                                                               */
-/* ------------------------------------------------------------------ */
+/* ================================================================== */
+/*  App shell                                                         */
+/* ================================================================== */
 
 export default function App() {
+  const [view, setView] = useState<View>("overview");
+  const [navOpen, setNavOpen] = useState(false);
+
   // attestation
   const [att, setAtt] = useState<Attestation | null>(null);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
+  const [attErr, setAttErr] = useState<string | null>(null);
 
-  // wallet + flow
+  // wallet
   const [wallet, setWallet] = useState<string | null>(null);
   const [walletErr, setWalletErr] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [walletMenu, setWalletMenu] = useState(false);
+  const [addrCopied, setAddrCopied] = useState(false);
+
+  // flow
   const [verify, setVerify] = useState<VerifyResult | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [submit, setSubmit] = useState<SubmitResult | null>(null);
@@ -151,14 +92,7 @@ export default function App() {
   const [landing, setLanding] = useState(false);
   const [flowErr, setFlowErr] = useState<string | null>(null);
 
-
-  const [faqOpen, setFaqOpen] = useState<number | null>(0);
-  const [copied, setCopied] = useState(false);
-  const [walletMenu, setWalletMenu] = useState(false);
-  const [addrCopied, setAddrCopied] = useState(false);
-
-  const [cardRef, cardSeen] = useInView<HTMLDivElement>(0.35);
-
+  /* ---- wallet actions ---- */
   async function onConnect() {
     setConnecting(true);
     setWalletErr(null);
@@ -172,17 +106,16 @@ export default function App() {
       setConnecting(false);
     }
   }
-
   function onDisconnect() {
     disconnectWallet();
     setWallet(null);
     setWalletMenu(false);
     setVerify(null);
     setSubmit(null);
+    setLanded(null);
     setFlowErr(null);
     setWalletErr(null);
   }
-
   function copyAddress() {
     if (!wallet) return;
     navigator.clipboard?.writeText(wallet);
@@ -190,35 +123,7 @@ export default function App() {
     setTimeout(() => setAddrCopied(false), 1400);
   }
 
-  // Restore a previous session on reload — only if Freighter still has this
-  // site authorized and unlocked (silent, never opens a popup). Prevents a
-  // stale "connected" pill after the user locked or revoked the wallet.
-  useEffect(() => {
-    if (!loadWallet()) return;
-    let cancelled = false;
-    silentAddress().then((addr) => {
-      if (cancelled) return;
-      if (addr) {
-        setWallet(addr);
-        persistWallet(addr);
-      } else {
-        disconnectWallet();
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Close the wallet menu when clicking outside.
-  useEffect(() => {
-    if (!walletMenu) return;
-    const close = () => setWalletMenu(false);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, [walletMenu]);
-
-
+  /* ---- flow actions ---- */
   async function onVerify() {
     if (!wallet) return;
     setVerifying(true);
@@ -232,8 +137,20 @@ export default function App() {
       setVerifying(false);
     }
   }
-
-  async function onSubmit() {
+  async function onLand() {
+    if (!wallet) return;
+    setLanding(true);
+    setFlowErr(null);
+    setLanded(null);
+    try {
+      setLanded(await submitVerifyProof(wallet));
+    } catch (e) {
+      setFlowErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLanding(false);
+    }
+  }
+  async function onReplay() {
     if (!wallet) return;
     setSubmitting(true);
     setFlowErr(null);
@@ -247,120 +164,175 @@ export default function App() {
     }
   }
 
-  // Sign a REAL verify_proof transaction with the connected wallet and submit
-  // it to testnet. It lands on-chain under the signer's own address, so the
-  // returned hash truly resolves on stellar.expert — the honest, verifiable
-  // "I signed this myself" action.
-  async function onLandProof() {
-    if (!wallet) return;
-    setLanding(true);
-    setFlowErr(null);
-    setLanded(null);
-    try {
-      setLanded(await submitVerifyProof(wallet));
-    } catch (e) {
-      setFlowErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLanding(false);
-    }
-  }
-
-
+  /* ---- effects ---- */
   useEffect(() => {
     getAttestation(DEMO_ISSUER.senderHashHex)
       .then(setAtt)
-      .catch((e) => setErr(String(e)))
+      .catch((e) => setAttErr(String(e)))
       .finally(() => setLoading(false));
   }, []);
 
-  const target = att ? Number(att.threshold) : 0;
-  const counted = useCountUp(target, cardSeen && !!att);
+  useEffect(() => {
+    if (!loadWallet()) return;
+    let cancelled = false;
+    silentAddress().then((addr) => {
+      if (cancelled) return;
+      if (addr) {
+        setWallet(addr);
+        persistWallet(addr);
+      } else disconnectWallet();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  function copyContract() {
-    navigator.clipboard?.writeText(CONTRACT_ID);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1600);
-  }
+  useEffect(() => {
+    if (!walletMenu) return;
+    const close = () => setWalletMenu(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [walletMenu]);
+
+  const active = NAV.find((n) => n.id === view)!;
 
   return (
-    <div className="app-root">
-      {/* ambient background */}
-      <div className="bg-grid" aria-hidden />
+    <div className="shell">
       <div className="bg-orb orb-1" aria-hidden />
       <div className="bg-orb orb-2" aria-hidden />
-      <div className="bg-noise" aria-hidden />
 
-      {/* ===================== NAV ===================== */}
-      <header className="nav">
-        <div className="nav-inner">
-          <a className="nav-brand" href="#top">
-            <img src="/solvent.png" alt="" className="nav-logo" />
-            <span>Solvent</span>
+      {/* ===================== SIDEBAR ===================== */}
+      <aside className={`side ${navOpen ? "open" : ""}`}>
+        <div className="side-brand" onClick={() => setView("overview")}>
+          <img src="/solvent.png" alt="" className="side-logo" />
+          <div>
+            <b>Solvent</b>
+            <span>ZK proof-of-reserves</span>
+          </div>
+        </div>
+
+        <nav className="side-nav">
+          <span className="side-label">Console</span>
+          {NAV.map((n) => (
+            <button
+              key={n.id}
+              className={`side-item ${view === n.id ? "active" : ""}`}
+              onClick={() => {
+                setView(n.id);
+                setNavOpen(false);
+              }}
+            >
+              <span className="side-ic">{n.icon}</span>
+              <span className="side-txt">
+                <b>{n.label}</b>
+                <i>{n.hint}</i>
+              </span>
+              {n.id === "issuers" && (
+                <span className="side-count">{SCENARIOS.length}</span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        <div className="side-foot">
+          <a
+            className="side-net"
+            href={`${EXPLORER}/contract/${CONTRACT_ID}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <span className="net-dot" />
+            <div>
+              <b>Stellar testnet</b>
+              <i className="mono">{short(CONTRACT_ID, 5)}</i>
+            </div>
+            <span className="side-net-go">↗</span>
           </a>
 
-          <nav className="nav-links">
-            <a href="#how">How it works</a>
-            <a href="#try">Live demo</a>
-            <a href="#proof">On-chain</a>
-            <a href="#faq">FAQ</a>
-          </nav>
+          {wallet ? (
+            <div className="side-wallet" onClick={(e) => e.stopPropagation()}>
+              <button
+                className={`side-wallet-btn ${walletMenu ? "active" : ""}`}
+                onClick={() => setWalletMenu((o) => !o)}
+              >
+                <span className="wallet-avatar" />
+                <span className="mono">{short(wallet, 5)}</span>
+                <span className="wallet-caret">▾</span>
+              </button>
+              {walletMenu && (
+                <div className="wallet-menu up">
+                  <button className="wallet-menu-item" onClick={copyAddress}>
+                    <span>{addrCopied ? "✓ Copied" : "Copy address"}</span>
+                    <span className="wmi-ic">⧉</span>
+                  </button>
+                  <a
+                    className="wallet-menu-item"
+                    href={`${EXPLORER}/account/${wallet}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setWalletMenu(false)}
+                  >
+                    <span>View on explorer</span>
+                    <span className="wmi-ic">↗</span>
+                  </a>
+                  <button
+                    className="wallet-menu-item danger"
+                    onClick={onDisconnect}
+                  >
+                    <span>Disconnect</span>
+                    <span className="wmi-ic">⏻</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <button
+              className="btn btn-primary side-connect"
+              onClick={onConnect}
+              disabled={connecting}
+            >
+              {connecting ? "Connecting…" : "Connect Freighter"}
+            </button>
+          )}
+          {walletErr && <p className="side-err">{walletErr}</p>}
+        </div>
+      </aside>
 
-          <div className="nav-right">
+      {navOpen && (
+        <div className="side-scrim" onClick={() => setNavOpen(false)} />
+      )}
+
+      {/* ===================== MAIN ===================== */}
+      <div className="main">
+        <header className="topbar">
+          <button
+            className="hamb"
+            onClick={() => setNavOpen((o) => !o)}
+            aria-label="Menu"
+          >
+            <span /><span /><span />
+          </button>
+          <div className="topbar-title">
+            <h1>{active.label}</h1>
+            <span>{active.hint}</span>
+          </div>
+          <div className="topbar-right">
             <span className="net-pill">
-              <span className="net-dot" />
-              Stellar testnet
+              <span className="net-dot" /> testnet
             </span>
             {wallet ? (
-              <div
-                className="wallet-wrap"
-                onClick={(e) => e.stopPropagation()}
-              >
+              <div className="wallet-wrap" onClick={(e) => e.stopPropagation()}>
                 <button
                   className={`wallet-pill ${walletMenu ? "active" : ""}`}
-                  title={wallet}
                   onClick={() => setWalletMenu((o) => !o)}
                 >
                   <span className="wallet-avatar" />
                   {short(wallet)}
-                  <span className="wallet-caret">▾</span>
                 </button>
-
-                {walletMenu && (
-                  <div className="wallet-menu">
-                    <div className="wallet-menu-head">
-                      <span className="wallet-avatar lg" />
-                      <div>
-                        <b className="mono">{short(wallet, 6)}</b>
-                        <span>Freighter · Testnet</span>
-                      </div>
-                    </div>
-                    <button className="wallet-menu-item" onClick={copyAddress}>
-                      <span>{addrCopied ? "✓ Copied" : "Copy address"}</span>
-                      <span className="wmi-ic">⧉</span>
-                    </button>
-                    <a
-                      className="wallet-menu-item"
-                      href={`${EXPLORER}/account/${wallet}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={() => setWalletMenu(false)}
-                    >
-                      <span>View on explorer</span>
-                      <span className="wmi-ic">↗</span>
-                    </a>
-                    <button
-                      className="wallet-menu-item danger"
-                      onClick={onDisconnect}
-                    >
-                      <span>Disconnect</span>
-                      <span className="wmi-ic">⏻</span>
-                    </button>
-                  </div>
-                )}
               </div>
             ) : (
               <button
-                className="btn btn-connect"
+                className="btn btn-primary btn-sm"
                 onClick={onConnect}
                 disabled={connecting}
               >
@@ -368,178 +340,485 @@ export default function App() {
               </button>
             )}
           </div>
+        </header>
 
+        <div className="content">
+          {view === "overview" && (
+            <Overview
+              att={att}
+              loading={loading}
+              attErr={attErr}
+              wallet={wallet}
+              onGoVerify={() => setView("verify")}
+              onConnect={onConnect}
+              connecting={connecting}
+            />
+          )}
+          {view === "verify" && (
+            <VerifyWorkbench
+              wallet={wallet}
+              onConnect={onConnect}
+              connecting={connecting}
+              walletErr={walletErr}
+              onVerify={onVerify}
+              verifying={verifying}
+              verify={verify}
+              onLand={onLand}
+              landing={landing}
+              landed={landed}
+              onReplay={onReplay}
+              submitting={submitting}
+              submit={submit}
+              flowErr={flowErr}
+            />
+          )}
+          {view === "issuers" && <Issuers att={att} />}
+          {view === "onchain" && <Onchain />}
         </div>
-      </header>
+      </div>
+    </div>
+  );
+}
 
-      <main id="top">
-        {/* ===================== HERO ===================== */}
-        <section className="hero">
-          <div className="hero-copy">
-            <a
-              className="hero-badge"
-              href={`${EXPLORER}/tx/${PROVE_TX}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <span className="badge-dot" />
-              Live proof verified on-chain
-              <span className="badge-arrow">↗</span>
-            </a>
+/* ================================================================== */
+/*  OVERVIEW                                                          */
+/* ================================================================== */
 
-            <h1 className="hero-title">
-              Prove your reserves.
-              <br />
-              <span className="hero-grad">Reveal nothing.</span>
-            </h1>
+function Overview({
+  att,
+  loading,
+  attErr,
+  wallet,
+  onGoVerify,
+  onConnect,
+  connecting,
+}: {
+  att: Attestation | null;
+  loading: boolean;
+  attErr: string | null;
+  wallet: string | null;
+  onGoVerify: () => void;
+  onConnect: () => void;
+  connecting: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const target = att ? Number(att.threshold) : 0;
+  const counted = useCountUp(target, !!att);
 
-            <p className="hero-lede">
-              Stablecoin issuers today either <em>expose</em> their bank balance
-              or say <em>“trust us.”</em> Solvent lets an issuer prove reserves
-              clear a threshold from a real DKIM-signed bank email — verified
-              on-chain with zero-knowledge. The balance is never disclosed.
-            </p>
-
-            <div className="hero-cta">
-              <a className="btn btn-primary" href="#try">
-                Try the live demo
-              </a>
-              <a
+  return (
+    <div className="view">
+      {/* banner */}
+      <section className="banner">
+        <div className="banner-copy">
+          <span className="tag">
+            <span className="badge-dot" /> Live on Stellar testnet
+          </span>
+          <h2>
+            Reserves proven. <span className="grad">Balance hidden.</span>
+          </h2>
+          <p>
+            An issuer proves their bank balance clears a threshold from a real
+            DKIM-signed email — verified on-chain with a BN254 pairing check.
+            The actual number never touches the chain.
+          </p>
+          <div className="banner-cta">
+            <button className="btn btn-primary" onClick={onGoVerify}>
+              ⚡ Run the live proof
+            </button>
+            {!wallet && (
+              <button
                 className="btn btn-ghost"
-                href={`${EXPLORER}/contract/${CONTRACT_ID}`}
-                target="_blank"
-                rel="noreferrer"
+                onClick={onConnect}
+                disabled={connecting}
               >
-                View contract ↗
-              </a>
-            </div>
-
-            <div className="hero-trust">
-              <span>Built on</span>
-              <b>Soroban</b>
-              <i />
-              <b>BN254</b>
-              <i />
-              <b>Groth16</b>
-              <i />
-              <b>Circom</b>
+                {connecting ? "Connecting…" : "Connect Freighter"}
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="banner-side" ref={ref}>
+          <div className="reserve-tile">
+            <span className="reserve-label">Reserve proven · {DEMO_ISSUER.label}</span>
+            {loading ? (
+              <div className="reserve-skel" />
+            ) : att ? (
+              <div className="reserve-value">
+                ≥ {formatUsd(BigInt(counted))}
+                <span className="reserve-check">✓</span>
+              </div>
+            ) : (
+              <div className="reserve-value muted">—</div>
+            )}
+            <div className="reserve-meta">
+              <span>🔒 balance never disclosed</span>
+              {att && <span className="mono">proven {formatDate(att.timestamp)}</span>}
             </div>
           </div>
+        </div>
+      </section>
 
-          {/* interactive: email → proof → on-chain, on the FIRST screen */}
-          <HeroDemo
-            wallet={wallet}
-            connecting={connecting}
-            onConnect={onConnect}
-            onVerify={onVerify}
-            verifying={verifying}
-            verify={verify}
-          />
-        </section>
+      {attErr && <p className="inline-err">Could not read attestation: {attErr}</p>}
 
+      {/* metric cards */}
+      <section className="metrics">
+        <Metric
+          icon="🔒"
+          value={att ? formatUsd(att.threshold) : "—"}
+          label="Reserve floor proven"
+          sub="threshold, not the balance"
+        />
+        <Metric
+          icon="◎"
+          value={CIRCUIT.constraints.toLocaleString()}
+          label="Circuit constraints"
+          sub="BN254 · Groth16"
+        />
+        <Metric
+          icon="⚡"
+          value="< 100M"
+          label="On-chain budget used"
+          sub="fits Soroban limit"
+        />
+        <Metric
+          icon="🛡️"
+          value="#7"
+          label="Replay rejection"
+          sub="nullifier burned"
+        />
+      </section>
 
-        {/* ===================== STAT STRIP ===================== */}
-        <section className="stats">
-          {[
-            { v: CIRCUIT.constraints.toLocaleString(), l: "circuit constraints" },
-            { v: "< 100M", l: "on-chain instruction budget" },
-            { v: "BN254", l: "native Stellar pairing" },
-            { v: "$0", l: "balance ever leaked" },
-          ].map((s, i) => (
-            <div className="stat" key={i}>
-              <b>{s.v}</b>
-              <span>{s.l}</span>
-            </div>
-          ))}
-        </section>
-
-        {/* ===================== PROBLEM ===================== */}
-        <section className="problem">
-          <div className="prob-col prob-bad">
-            <span className="prob-tag">Today</span>
-            <h3>A false choice</h3>
-            <ul>
-              <li>
-                <span className="x">✕</span> Publish the bank balance — leak your
-                treasury to every competitor.
-              </li>
-              <li>
-                <span className="x">✕</span> Or post a PDF and say “trust us” —
-                unverifiable, forgeable, stale.
-              </li>
-              <li>
-                <span className="x">✕</span> Auditors are periodic; runs happen
-                in minutes.
-              </li>
-            </ul>
+      {/* two-up: mechanism + status */}
+      <section className="grid-2">
+        <div className="panel">
+          <div className="panel-head">
+            <h3>How a proof is made</h3>
+            <span className="panel-tag">4 stages</span>
           </div>
-          <div className="prob-arrow">→</div>
-          <div className="prob-col prob-good">
-            <span className="prob-tag good">With Solvent</span>
-            <h3>Prove the floor, hide the rest</h3>
-            <ul>
-              <li>
-                <span className="c">✓</span> “Reserves ≥ $1,000,000” — proven,
-                not promised.
-              </li>
-              <li>
-                <span className="c">✓</span> Bound to your bank's real DKIM
-                signature, checked in-circuit.
-              </li>
-              <li>
-                <span className="c">✓</span> Verifiable by anyone, anytime,
-                on-chain — balance stays private.
-              </li>
-            </ul>
-          </div>
-        </section>
-
-        {/* ===================== HOW IT WORKS ===================== */}
-        <section id="how" className="section">
-          <SectionHead
-            eyebrow="Mechanism"
-            title="A signed email becomes an on-chain proof"
-            sub="Four stages turn an ordinary bank email into a trustless, private attestation."
-          />
-
-          <div className="steps">
-            {STEPS.map((s, i) => (
-              <article className="step" key={i} style={{ ["--d" as string]: `${i * 90}ms` }}>
-                <div className="step-top">
-                  <span className="step-n">{s.n}</span>
-                  <span className="step-kicker">{s.kicker}</span>
+          <ol className="flow">
+            {[
+              ["DKIM-signed email", `${DKIM.domain} · ${DKIM.algo}`],
+              ["In-circuit sender extraction", "From header → Poseidon"],
+              ["Groth16 proof over signature", "balance ≥ threshold, in ZK"],
+              ["Native BN254 pairing_check", "verified inside Soroban"],
+            ].map(([t, d], i) => (
+              <li key={i}>
+                <span className="flow-n">{i + 1}</span>
+                <div>
+                  <b>{t}</b>
+                  <i className="mono">{d}</i>
                 </div>
-                <h4>{s.title}</h4>
-                <p>{s.body}</p>
-                <div className="step-tags">
-                  {s.tags.map((t) => (
-                    <span className="chip" key={t}>
-                      {t}
-                    </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        <div className="panel">
+          <div className="panel-head">
+            <h3>Attestation status</h3>
+            <span className="live-chip">
+              <span className="net-dot" /> live
+            </span>
+          </div>
+          {att ? (
+            <div className="statlist">
+              <Row k="Issuer" v={DEMO_ISSUER.label} />
+              <Row k="Signed by" v="Bank DKIM key (in-circuit)" />
+              <Row k="Proven on" v={formatDate(att.timestamp)} />
+              <Row k="Nullifier" v={short(att.nullifier, 8)} mono />
+              <Row k="Replay attempt" v="rejected · #7" reject />
+            </div>
+          ) : (
+            <div className="statlist">
+              <div className="reserve-skel row" />
+              <div className="reserve-skel row" />
+              <div className="reserve-skel row" />
+            </div>
+          )}
+          <a
+            className="panel-link"
+            href={`${EXPLORER}/tx/${PROVE_TX}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Verify the pairing_check on-chain ↗
+          </a>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function Metric({
+  icon,
+  value,
+  label,
+  sub,
+}: {
+  icon: string;
+  value: string;
+  label: string;
+  sub: string;
+}) {
+  return (
+    <div className="metric">
+      <span className="metric-ic">{icon}</span>
+      <b className="metric-val">{value}</b>
+      <span className="metric-label">{label}</span>
+      <span className="metric-sub">{sub}</span>
+    </div>
+  );
+}
+
+function Row({
+  k,
+  v,
+  mono,
+  reject,
+}: {
+  k: string;
+  v: string;
+  mono?: boolean;
+  reject?: boolean;
+}) {
+  return (
+    <div className="srow">
+      <span>{k}</span>
+      <b className={`${mono ? "mono" : ""} ${reject ? "reject" : ""}`}>{v}</b>
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  VERIFY WORKBENCH — the core app                                   */
+/* ================================================================== */
+
+const PROVE_STEPS = [
+  { k: "Reading DKIM signature", d: `${DKIM.domain} · ${DKIM.algo}` },
+  { k: "Extracting sender (in-circuit regex)", d: "From header → Poseidon" },
+  { k: "Reading signed balance", d: "body hash matched" },
+  { k: "Proving balance ≥ threshold", d: "Groth16 · BN254" },
+];
+type Phase = "idle" | "proving" | "proved";
+
+function VerifyWorkbench({
+  wallet,
+  onConnect,
+  connecting,
+  walletErr,
+  onVerify,
+  verifying,
+  verify,
+  onLand,
+  landing,
+  landed,
+  onReplay,
+  submitting,
+  submit,
+  flowErr,
+}: {
+  wallet: string | null;
+  onConnect: () => void;
+  connecting: boolean;
+  walletErr: string | null;
+  onVerify: () => void;
+  verifying: boolean;
+  verify: VerifyResult | null;
+  onLand: () => void;
+  landing: boolean;
+  landed: LandedTx | null;
+  onReplay: () => void;
+  submitting: boolean;
+  submit: SubmitResult | null;
+  flowErr: string | null;
+}) {
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [active, setActive] = useState(-1);
+  const [sc, setSc] = useState<Scenario>(SCENARIOS[0]);
+
+  function pickScenario(next: Scenario) {
+    if (next.id === sc.id) return;
+    setSc(next);
+    setPhase("idle");
+    setActive(-1);
+  }
+
+  function generate() {
+    if (phase === "proving") return;
+    setPhase("proving");
+    setActive(0);
+    let i = 0;
+    const tick = () => {
+      i += 1;
+      if (i < PROVE_STEPS.length) {
+        setActive(i);
+        setTimeout(tick, 540);
+      } else {
+        setTimeout(() => {
+          setActive(-1);
+          setPhase("proved");
+        }, 460);
+      }
+    };
+    setTimeout(tick, 540);
+  }
+
+  // progress across the whole workbench
+  const stage = !wallet
+    ? 0
+    : phase !== "proved"
+      ? 1
+      : !verify
+        ? 2
+        : !landed
+          ? 3
+          : 4;
+
+  return (
+    <div className="view">
+      <div className="wb-progress">
+        {["Connect", "Build proof", "Verify", "Sign & land", "Anti-replay"].map(
+          (s, i) => (
+            <div
+              key={s}
+              className={`wb-pnode ${i < stage ? "done" : ""} ${i === stage ? "cur" : ""}`}
+            >
+              <span className="wb-pdot">{i < stage ? "✓" : i + 1}</span>
+              <span className="wb-plabel">{s}</span>
+            </div>
+          ),
+        )}
+      </div>
+
+      <div className="wb">
+        {/* LEFT — build the proof */}
+        <section className="wb-col">
+          <div className="panel">
+            <div className="panel-head">
+              <h3>1 · Build the proof from an email</h3>
+              <span className="panel-tag">off-chain prover</span>
+            </div>
+
+            <div className="hd-scenarios" role="tablist">
+              {SCENARIOS.map((s) => (
+                <button
+                  key={s.id}
+                  role="tab"
+                  aria-selected={s.id === sc.id}
+                  className={`hd-scenario ${s.id === sc.id ? "active" : ""}`}
+                  onClick={() => pickScenario(s)}
+                >
+                  <span className="hd-sc-av">{s.avatar}</span>
+                  <span className="hd-sc-name">{s.label}</span>
+                  <span className={`hd-sc-tag ${s.live ? "live" : ""}`}>
+                    {s.live ? "live" : "template"}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <div className="hd-email">
+              <div className="hd-eml-head">
+                <span className="hd-eml-ic">{sc.avatar}</span>
+                <div>
+                  <b>Balance statement · {sc.label}</b>
+                  <span className="mono">from: alerts@{sc.domain}</span>
+                </div>
+                <span className="hd-eml-verified">DKIM ✓</span>
+              </div>
+              <div className="hd-eml-body">
+                <div className="hd-eml-line">
+                  <span>Available balance</span>
+                  <span className="hd-eml-bal">
+                    {phase === "proved" ? (
+                      <><span className="hd-lock">🔒</span> hidden</>
+                    ) : (
+                      "••••••••"
+                    )}
+                  </span>
+                </div>
+                <div className="hd-eml-line">
+                  <span>Prove floor</span>
+                  <b className="mono">≥ {sc.threshold}</b>
+                </div>
+              </div>
+              <div className="hd-eml-sig mono">
+                dkim-signature: a={DKIM.algo}; d={DKIM.domain}; s={DKIM.selector};
+                bh={DKIM.bodyHash.slice(0, 16)}…
+              </div>
+            </div>
+
+            {phase !== "idle" && (
+              <div className="hd-pipe">
+                {PROVE_STEPS.map((s, i) => {
+                  const done = phase === "proved" || i < active;
+                  const cur = phase === "proving" && i === active;
+                  return (
+                    <div
+                      key={s.k}
+                      className={`hd-pstep ${done ? "done" : ""} ${cur ? "cur" : ""}`}
+                    >
+                      <span className="hd-pmark">
+                        {done ? "✓" : cur ? <span className="spinner tiny" /> : ""}
+                      </span>
+                      <div className="hd-ptext">
+                        <b>{s.k}</b>
+                        <span className="mono">{s.d}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {phase === "proved" && (
+              <div className="hd-proof">
+                <div className="hd-proof-head">
+                  <span className="pv-proof-label mono">π groth16</span>
+                  <span className="hd-proof-ok">ready</span>
+                </div>
+                <div className="pv-hexes">
+                  {[PROOF_HEX.a, PROOF_HEX.bx, PROOF_HEX.c].map((h) => (
+                    <span key={h} className="pv-hex mono">{h}</span>
                   ))}
                 </div>
-                {i < STEPS.length - 1 && <span className="step-link" aria-hidden />}
-              </article>
-            ))}
+                <div className="hd-proof-null mono">
+                  nullifier {PROOF_HEX.nullifier}
+                </div>
+                {!sc.live && (
+                  <div className="hd-proof-tpl">
+                    Template preview — only <b>Acme Bank</b> has a proof burned
+                    on-chain. Pick it to verify live.
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button
+              className="btn btn-primary wb-btn"
+              onClick={generate}
+              disabled={phase === "proving" || phase === "proved"}
+            >
+              {phase === "proving" ? (
+                <><span className="spinner" /> Generating proof…</>
+              ) : phase === "proved" ? (
+                "✓ Proof generated"
+              ) : (
+                "Generate proof from email"
+              )}
+            </button>
           </div>
         </section>
 
-        {/* ===================== INTERACTIVE dAPP ===================== */}
-        <section id="try" className="section">
-          <SectionHead
-            eyebrow="Live on testnet"
-            title="Verify it yourself — no backend involved"
-            sub="Connect Freighter and run the real BN254 pairing check on Stellar. Then submit a signed transaction and watch anti-replay reject it live."
-          />
-
+        {/* RIGHT — on-chain actions */}
+        <section className="wb-col">
           {!wallet ? (
-            <div className="gate">
+            <div className="panel gate">
               <div className="gate-glow" />
               <div className="gate-lock">🔓</div>
-              <h4>Connect a wallet to run the live proof</h4>
+              <h3>Connect a wallet to verify on-chain</h3>
               <p>
                 Everything runs read-only until you explicitly sign. Testnet
-                only — no real funds are ever moved.
+                only — no real funds move. New accounts are auto-funded.
               </p>
               <button
                 className="btn btn-primary btn-lg"
@@ -551,37 +830,30 @@ export default function App() {
               {walletErr && <p className="inline-err">{walletErr}</p>}
             </div>
           ) : (
-            <div className="demo-grid">
-              {/* card 1 — verify */}
-              <div className="demo-card">
-                <div className="demo-head">
-                  <span className="demo-num">1</span>
-                  <div>
-                    <b>Run the ZK proof on-chain</b>
-                    <span>
-                      <code>verify_proof</code> · read-only · repeatable
-                    </span>
-                  </div>
+            <>
+              {/* verify (read-only) */}
+              <div className="panel">
+                <div className="panel-head">
+                  <h3>2 · Verify on-chain</h3>
+                  <span className="panel-tag mono">verify_proof · read-only</span>
                 </div>
-                <p className="demo-body">
-                  Executes Stellar's native <code>bn254.pairing_check</code>{" "}
-                  against the deployed verification key. No state, no fee — the
-                  proof is checked live inside the contract.
+                <p className="panel-body">
+                  Runs Stellar's native <code>bn254.pairing_check</code> against
+                  the deployed verification key — no state, no fee, repeatable.
                 </p>
                 <button
-                  className="btn btn-primary demo-action"
+                  className="btn btn-primary wb-btn"
                   onClick={onVerify}
-                  disabled={verifying}
+                  disabled={verifying || phase !== "proved"}
                 >
                   {verifying ? (
-                    <>
-                      <span className="spinner" /> Verifying on-chain…
-                    </>
+                    <><span className="spinner" /> Verifying on-chain…</>
+                  ) : phase !== "proved" ? (
+                    "Build a proof first"
                   ) : (
                     "Verify proof live"
                   )}
                 </button>
-
                 {verify && (
                   <div className={`result ${verify.valid ? "ok" : "bad"}`}>
                     <div className="result-row">
@@ -601,72 +873,54 @@ export default function App() {
                       <div
                         className="budget-fill"
                         style={{
-                          width: `${Math.min(
-                            100,
-                            (verify.cpuInsns / verify.budget) * 100,
-                          )}%`,
+                          width: `${Math.min(100, (verify.cpuInsns / verify.budget) * 100)}%`,
                         }}
                       />
                     </div>
                     <p className="result-note">
-                      Fits comfortably under Soroban's 100M budget — on-chain ZK
-                      verification is practical.
+                      Fits under Soroban's 100M budget — on-chain ZK is practical.
                     </p>
                   </div>
                 )}
               </div>
 
-              {/* card 2 — land a REAL signed tx under YOUR OWN address */}
-              <div className="demo-card">
-                <div className="demo-head">
-                  <span className="demo-num">2</span>
-                  <div>
-                    <b>Sign it with your wallet</b>
-                    <span>
-                      <code>verify_proof</code> · you sign · lands on-chain
-                    </span>
-                  </div>
+              {/* sign & land */}
+              <div className="panel">
+                <div className="panel-head">
+                  <h3>3 · Sign &amp; broadcast</h3>
+                  <span className="panel-tag mono">you sign · lands</span>
                 </div>
-                <p className="demo-body">
-                  Sign a real Soroban transaction in Freighter and broadcast it
-                  to testnet. It's included in a ledger under{" "}
-                  <b>your own address</b> — so the resulting hash truly opens on
-                  Stellar Expert, signed by <span className="mono">{short(wallet, 4)}</span>.
+                <p className="panel-body">
+                  Sign a real Soroban tx in Freighter. It's included in a ledger
+                  under <b>your own address</b> — the hash truly resolves on
+                  Stellar Expert, signed by{" "}
+                  <span className="mono">{short(wallet, 4)}</span>.
                 </p>
                 <button
-                  className="btn btn-primary demo-action"
-                  onClick={onLandProof}
-                  disabled={landing}
+                  className="btn btn-primary wb-btn"
+                  onClick={onLand}
+                  disabled={landing || !verify}
                 >
                   {landing ? (
-                    <>
-                      <span className="spinner" /> Waiting for ledger…
-                    </>
+                    <><span className="spinner" /> Waiting for ledger…</>
+                  ) : !verify ? (
+                    "Verify first"
                   ) : (
                     "Sign & broadcast to testnet"
                   )}
                 </button>
-
                 {landed && (
                   <div className="result ok">
-                    <div className="result-row">
-                      <span>You signed</span>
-                      <b className="good">✓ verify_proof</b>
-                    </div>
                     <div className="result-row">
                       <span>Included in ledger</span>
                       <b className="mono">#{landed.ledger.toLocaleString()}</b>
                     </div>
                     <div className="result-row">
                       <span>On-chain instructions</span>
-                      <b className="mono">
-                        {landed.cpuInsns.toLocaleString()}
-                      </b>
+                      <b className="mono">{landed.cpuInsns.toLocaleString()}</b>
                     </div>
                     <p className="result-note">
-                      ✅ Confirmed on testnet, signed by your wallet. Open it on
-                      the explorer — it resolves under your own account, no
-                      pre-baked hash.
+                      ✅ Confirmed on testnet, signed by your wallet.
                     </p>
                     <div className="replay-links">
                       <a
@@ -686,22 +940,34 @@ export default function App() {
                         your account ↗
                       </a>
                     </div>
-                    <div className="replay-note">
-                      <b>🛡️ Now try to double-spend it:</b> the{" "}
-                      <code>prove_reserve</code> path burns a nullifier the first
-                      time. Replaying the same email is rejected with{" "}
-                      <b>Error&nbsp;#7</b> at preflight — no ledger slot, no fee.
-                      <button
-                        className="linkish"
-                        onClick={onSubmit}
-                        disabled={submitting}
-                      >
-                        {submitting ? "checking…" : "run the replay →"}
-                      </button>
-                    </div>
                   </div>
                 )}
+              </div>
 
+              {/* replay */}
+              <div className="panel">
+                <div className="panel-head">
+                  <h3>4 · Try to double-spend</h3>
+                  <span className="panel-tag mono">prove_reserve · replay</span>
+                </div>
+                <p className="panel-body">
+                  <code>prove_reserve</code> burns a nullifier the first time.
+                  Replaying the same email is rejected with <b>Error #7</b> at
+                  preflight — no ledger slot, no fee.
+                </p>
+                <button
+                  className="btn btn-ghost wb-btn"
+                  onClick={onReplay}
+                  disabled={submitting || !landed}
+                >
+                  {submitting ? (
+                    <><span className="spinner" /> Attempting replay…</>
+                  ) : !landed ? (
+                    "Land a proof first"
+                  ) : (
+                    "🛡️ Run the replay"
+                  )}
+                </button>
                 {submit && submit.replayRejected && (
                   <div className="result ok slim">
                     <div className="result-row">
@@ -713,19 +979,10 @@ export default function App() {
                       {submit.preflightRejected
                         ? "at preflight — nothing spent"
                         : "before any state change"}
-                      . The same email can never mint twice.{" "}
-                      <a
-                        className="tx-link mono inline"
-                        href={`${EXPLORER}/tx/${PROVE_TX}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        original prove tx ↗
-                      </a>
+                      . The same email can never mint twice.
                     </p>
                   </div>
                 )}
-
                 {submit && !submit.replayRejected && submit.errorCode && (
                   <div className="result bad slim">
                     <div className="result-row">
@@ -735,507 +992,178 @@ export default function App() {
                   </div>
                 )}
               </div>
-
-            </div>
+            </>
           )}
-          {flowErr && <p className="inline-err center">{flowErr}</p>}
         </section>
+      </div>
+      {flowErr && <p className="inline-err center">{flowErr}</p>}
+    </div>
+  );
+}
 
-        {/* ===================== LIVE ATTESTATION ===================== */}
-        <section id="proof" className="section">
-          <SectionHead
-            eyebrow="On-chain state"
-            title="Live attestation"
-            sub="Read directly from the deployed contract on testnet — no backend, no cache."
-          />
+/* ================================================================== */
+/*  ISSUERS                                                           */
+/* ================================================================== */
 
-          <div className="attest-card" ref={cardRef}>
-            <div className="attest-head">
-              <div className="issuer">
-                <span className="issuer-avatar">🏦</span>
-                <div>
-                  <b>{DEMO_ISSUER.label}</b>
-                  <span>verified reserve issuer</span>
-                </div>
+function Issuers({ att }: { att: Attestation | null }) {
+  return (
+    <div className="view">
+      <div className="panel-note">
+        Only issuers whose DKIM sender hash is registered on the contract can
+        post an attestation. <b>Acme Bank</b> has a proof burned on-chain; the
+        others are honestly-labelled templates of the identical flow.
+      </div>
+      <div className="issuer-grid">
+        {SCENARIOS.map((s) => (
+          <div key={s.id} className={`issuer-card ${s.live ? "live" : ""}`}>
+            <div className="issuer-top">
+              <span className="issuer-avatar">{s.avatar}</span>
+              <div>
+                <b>{s.label}</b>
+                <span className="mono">{s.domain}</span>
               </div>
-              <span className="live-chip">
-                <span className="net-dot" /> live
+              <span className={`issuer-badge ${s.live ? "on" : ""}`}>
+                {s.live ? "● live" : "template"}
               </span>
             </div>
-
-            {loading && (
-              <div className="attest-load">
-                <span className="spinner dark" /> Reading attestation from
-                testnet…
+            <div className="issuer-body">
+              <div className="issuer-metric">
+                <span>Reserve floor</span>
+                <b>{s.threshold}</b>
               </div>
-            )}
-            {err && <p className="inline-err">Could not read attestation: {err}</p>}
-
-            {att && (
-              <div className="attest-body">
-                <div className="reserve-box">
-                  <span className="reserve-label">Reserve proven</span>
-                  <div className="reserve-value">
-                    ≥ {formatUsd(BigInt(counted))}
-                    <span className="reserve-check">✓</span>
-                  </div>
-                  <div className="reserve-hidden">
-                    🔒 Actual balance <b>never disclosed</b> — only the threshold
-                    is proven in zero knowledge.
-                  </div>
+              <div className="issuer-metric">
+                <span>Status</span>
+                <b className={s.live ? "good" : "muted"}>
+                  {s.live ? "attested on-chain" : "not yet proven"}
+                </b>
+              </div>
+              {s.live && att && (
+                <div className="issuer-metric">
+                  <span>Proven on</span>
+                  <b className="mono">{formatDate(att.timestamp)}</b>
                 </div>
-
-                <div className="facts">
-                  <Fact label="Proven on" value={formatDate(att.timestamp)} />
-                  <Fact label="Signed by" value="Bank DKIM key (in-circuit)" />
-                  <Fact
-                    label="Nullifier"
-                    value={short(att.nullifier, 8)}
-                    mono
-                  />
-                  <Fact label="Replay attempt" value="rejected · #7" reject />
-                </div>
-              </div>
-            )}
-
-            {att && (
-              <div className="attest-actions">
-                <a
-                  className="btn btn-primary"
-                  href={`${EXPLORER}/tx/${PROVE_TX}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Verify pairing_check ↗
-                </a>
-                <a
-                  className="btn btn-ghost"
-                  href={`${EXPLORER}/tx/${TX_CHAIN.deploy}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Deploy tx ↗
-                </a>
-              </div>
-            )}
-          </div>
-
-          {/* transaction chain */}
-          <div className="txchain">
-            <h4 className="txchain-title">The full verifiable chain</h4>
-            <div className="txchain-row">
-              {[
-                { k: "Deploy", h: TX_CHAIN.deploy },
-                { k: "Init", h: TX_CHAIN.init },
-                { k: "Register", h: TX_CHAIN.register },
-                { k: "Prove", h: TX_CHAIN.prove },
-              ].map((t, i) => (
-                <a
-                  key={t.k}
-                  className="txnode"
-                  href={`${EXPLORER}/tx/${t.h}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ ["--d" as string]: `${i * 80}ms` }}
-                >
-                  <span className="txnode-k">{t.k}</span>
-                  <span className="txnode-h mono">{short(t.h, 6)}</span>
-                  <span className="txnode-go">↗</span>
-                </a>
-              ))}
+              )}
             </div>
-          </div>
-
-          {/* public journal */}
-          <details className="journal">
-            <summary>
-              <span>Inspect the public journal (7 signals)</span>
-              <span className="journal-chev">▾</span>
-            </summary>
-            <div className="journal-grid">
-              {[
-                ["pubkey_hash", "which provider signed it"],
-                ["sender_hash", "who the issuer is"],
-                ["nullifier", "anti-replay uniqueness"],
-                ["threshold_out", "echo of threshold"],
-                ["timestamp_out", "echo of timestamp"],
-                ["threshold", "reserve floor proven"],
-                ["timestamp", "email date (unix)"],
-              ].map(([name, meaning], i) => (
-                <div className="jrow" key={name}>
-                  <span className="jidx mono">{i}</span>
-                  <div className="jmain">
-                    <b className="mono">{name}</b>
-                    <span>{meaning}</span>
-                  </div>
-                  <span className="jval mono">{short(PUB_SIGNALS[i], 6)}</span>
-                </div>
-              ))}
-            </div>
-            <p className="journal-note">
-              The balance itself is <b>not</b> among these signals — only the
-              threshold it clears.
-            </p>
-          </details>
-        </section>
-
-        {/* ===================== FAQ ===================== */}
-        <section id="faq" className="section">
-          <SectionHead
-            eyebrow="Soundness"
-            title="Why this isn't a toy"
-            sub="Correctness lives in the math, not in the operator."
-          />
-          <div className="faq">
-            {FAQ.map((f, i) => (
-              <div
-                className={`faq-item ${faqOpen === i ? "open" : ""}`}
-                key={i}
-              >
-                <button
-                  className="faq-q"
-                  onClick={() => setFaqOpen(faqOpen === i ? null : i)}
-                >
-                  <span>{f.q}</span>
-                  <span className="faq-plus">{faqOpen === i ? "−" : "+"}</span>
-                </button>
-                <div className="faq-a">
-                  <p>{f.a}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* ===================== CTA ===================== */}
-        <section className="final-cta">
-          <div className="cta-card">
-            <div className="cta-glow" />
-            <h2>Solvency you can verify, privacy you keep.</h2>
-            <p>
-              A real DKIM-signed bank email → a Groth16 proof → verified on
-              Stellar with native BN254 pairing. No intermediary ever sees the
-              balance.
-            </p>
-            <div className="cta-actions">
-              <a className="btn btn-primary btn-lg" href="#try">
-                Run the live demo
-              </a>
+            {s.live ? (
               <a
-                className="btn btn-ghost btn-lg"
-                href={`${EXPLORER}/contract/${CONTRACT_ID}`}
+                className="btn btn-ghost btn-sm issuer-cta"
+                href={`${EXPLORER}/tx/${PROVE_TX}`}
                 target="_blank"
                 rel="noreferrer"
               >
-                Explore on-chain ↗
+                View attestation ↗
               </a>
-            </div>
-          </div>
-        </section>
-      </main>
-
-      {/* ===================== FOOTER ===================== */}
-      <footer className="footer">
-        <div className="footer-inner">
-          <div className="footer-brand">
-            <img src="/solvent.png" alt="" className="nav-logo" />
-            <div>
-              <b>Solvent</b>
-              <span>ZK proof-of-reserves on Stellar</span>
-            </div>
-          </div>
-          <button className="contract-copy" onClick={copyContract} title="Copy">
-            <span className="mono">{short(CONTRACT_ID, 8)}</span>
-            <span className="copy-ic">{copied ? "✓ copied" : "copy"}</span>
-          </button>
-        </div>
-        <div className="footer-fine">
-          Built for the Stellar ecosystem · Soroban · Protocol 25+ BN254
-        </div>
-      </footer>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Sub-components                                                    */
-/* ------------------------------------------------------------------ */
-
-function SectionHead({
-  eyebrow,
-  title,
-  sub,
-}: {
-  eyebrow: string;
-  title: string;
-  sub: string;
-}) {
-  return (
-    <div className="sec-head">
-      <span className="eyebrow">{eyebrow}</span>
-      <h2>{title}</h2>
-      <p>{sub}</p>
-    </div>
-  );
-}
-
-function Fact({
-  label,
-  value,
-  mono,
-  reject,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  reject?: boolean;
-}) {
-  return (
-    <div className="fact">
-      <span>{label}</span>
-      <b className={`${mono ? "mono" : ""} ${reject ? "reject" : ""}`}>
-        {value}
-      </b>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  HeroDemo — interactive email → proof → on-chain, on first screen   */
-/* ------------------------------------------------------------------ */
-
-const PROVE_STEPS = [
-  { k: "Reading DKIM signature", d: `${DKIM.domain} · ${DKIM.algo}` },
-  { k: "Extracting sender (in-circuit regex)", d: "From header → Poseidon" },
-  { k: "Reading signed balance", d: "body hash matched" },
-  { k: "Proving balance ≥ threshold", d: "Groth16 · BN254" },
-];
-
-type Phase = "email" | "proving" | "proved";
-
-function HeroDemo({
-  wallet,
-  connecting,
-  onConnect,
-  onVerify,
-  verifying,
-  verify,
-}: {
-  wallet: string | null;
-  connecting: boolean;
-  onConnect: () => void;
-  onVerify: () => void;
-  verifying: boolean;
-  verify: VerifyResult | null;
-}) {
-  const [phase, setPhase] = useState<Phase>("email");
-  const [active, setActive] = useState(-1);
-  const [sc, setSc] = useState<Scenario>(SCENARIOS[0]);
-
-  // Switch the issuer preset. Only "acme" has a live on-chain proof; the others
-  // are honestly-labelled templates of the identical flow at other thresholds.
-  function pickScenario(next: Scenario) {
-    if (next.id === sc.id) return;
-    setSc(next);
-    setPhase("email");
-    setActive(-1);
-  }
-
-
-  // Animate the email → proof pipeline. Proving happens off-chain (honest:
-  // a pre-generated proof is revealed), but the DKIM→sender→balance→π steps
-  // are the real zk-email flow, surfaced so the mechanism is visible.
-  function generate() {
-    if (phase === "proving") return;
-    setPhase("proving");
-    setActive(0);
-    let i = 0;
-    const tick = () => {
-      i += 1;
-      if (i < PROVE_STEPS.length) {
-        setActive(i);
-        setTimeout(tick, 560);
-      } else {
-        setTimeout(() => {
-          setActive(-1);
-          setPhase("proved");
-        }, 480);
-      }
-    };
-    setTimeout(tick, 560);
-  }
-
-  return (
-    <div className="herodemo">
-      <div className="hd-card">
-        <div className="hd-top">
-          <span className="pv-dots"><i /><i /><i /></span>
-          <span className="hd-steps mono">
-            <span className={phase !== "email" ? "done" : "cur"}>email</span>
-            <span className="sep">→</span>
-            <span className={phase === "proved" ? "done" : phase === "proving" ? "cur" : ""}>proof</span>
-            <span className="sep">→</span>
-            <span className={verify ? "done" : ""}>on-chain</span>
-          </span>
-        </div>
-
-        {/* ---- issuer scenario tabs ---- */}
-        <div className="hd-scenarios" role="tablist" aria-label="Choose issuer">
-          {SCENARIOS.map((s) => (
-            <button
-              key={s.id}
-              role="tab"
-              aria-selected={s.id === sc.id}
-              className={`hd-scenario ${s.id === sc.id ? "active" : ""}`}
-              onClick={() => pickScenario(s)}
-            >
-              <span className="hd-sc-av">{s.avatar}</span>
-              <span className="hd-sc-name">{s.label}</span>
-              <span className={`hd-sc-tag ${s.live ? "live" : ""}`}>
-                {s.live ? "live" : "template"}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        {/* ---- stage: email ---- */}
-        <div className="hd-email">
-          <div className="hd-eml-head">
-            <span className="hd-eml-ic">{sc.avatar}</span>
-            <div>
-              <b>Balance statement · {sc.label}</b>
-              <span className="mono">from: alerts@{sc.domain}</span>
-            </div>
-            <span className="hd-eml-verified">DKIM ✓</span>
-          </div>
-
-          <div className="hd-eml-body">
-            <div className="hd-eml-line">
-              <span>Available balance</span>
-              <span className="hd-eml-bal">
-                {phase === "proved" ? (
-                  <><span className="hd-lock">🔒</span> hidden</>
-                ) : (
-                  "••••••••"
-                )}
-              </span>
-            </div>
-            <div className="hd-eml-line">
-              <span>Prove floor</span>
-              <b className="mono">≥ {sc.threshold}</b>
-            </div>
-          </div>
-          <div className="hd-eml-sig mono">
-            dkim-signature: v=1; a={DKIM.algo}; d={DKIM.domain};
-            s={DKIM.selector}; bh={DKIM.bodyHash.slice(0, 18)}…
-          </div>
-        </div>
-
-        {/* ---- stage: proving pipeline ---- */}
-        {phase !== "email" && (
-          <div className="hd-pipe">
-            {PROVE_STEPS.map((s, i) => {
-              const done = phase === "proved" || i < active;
-              const cur = phase === "proving" && i === active;
-              return (
-                <div
-                  key={s.k}
-                  className={`hd-pstep ${done ? "done" : ""} ${cur ? "cur" : ""}`}
-                >
-                  <span className="hd-pmark">
-                    {done ? "✓" : cur ? <span className="spinner tiny" /> : ""}
-                  </span>
-                  <div className="hd-ptext">
-                    <b>{s.k}</b>
-                    <span className="mono">{s.d}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* ---- stage: proof ready ---- */}
-        {phase === "proved" && (
-          <div className="hd-proof">
-            <div className="hd-proof-head">
-              <span className="pv-proof-label mono">π groth16</span>
-              <span className="hd-proof-ok">ready</span>
-            </div>
-            <div className="pv-hexes">
-              {[PROOF_HEX.a, PROOF_HEX.bx, PROOF_HEX.c].map((h) => (
-                <span key={h} className="pv-hex mono">{h}</span>
-              ))}
-            </div>
-            <div className="hd-proof-null mono">
-              nullifier {PROOF_HEX.nullifier}
-            </div>
-            {!sc.live && (
-              <div className="hd-proof-tpl">
-                Template preview — only <b>Acme Bank</b> has a proof burned
-                on-chain. Pick it to verify live.
-              </div>
+            ) : (
+              <button className="btn btn-ghost btn-sm issuer-cta" disabled>
+                Template preview
+              </button>
             )}
           </div>
-        )}
+        ))}
+      </div>
+    </div>
+  );
+}
 
-        {/* ---- verify result ---- */}
-        {verify && (
-          <div className="hd-verify">
-            <span className="hd-verify-dot" />
-            <span className="mono">pairing_check() → {verify.valid ? "true" : "false"}</span>
-            <span className="hd-verify-badge">
-              {verify.cpuInsns.toLocaleString()} insns
-            </span>
-          </div>
-        )}
+/* ================================================================== */
+/*  ON-CHAIN                                                          */
+/* ================================================================== */
 
-        {/* ---- action ---- */}
-        <div className="hd-action">
-          {phase !== "proved" ? (
-            <button
-              className="btn btn-primary hd-btn"
-              onClick={generate}
-              disabled={phase === "proving"}
-            >
-              {phase === "proving" ? (
-                <><span className="spinner" /> Generating proof…</>
-              ) : (
-                "Generate proof from email"
-              )}
-            </button>
-          ) : !wallet ? (
-            <button
-              className="btn btn-primary hd-btn"
-              onClick={onConnect}
-              disabled={connecting}
-            >
-              {connecting ? "Connecting…" : "Connect wallet to verify"}
-            </button>
-          ) : verify ? (
-            <a className="btn btn-ghost hd-btn" href="#try">
-              Sign it on-chain yourself ↓
-            </a>
-          ) : (
-            <button
-              className="btn btn-primary hd-btn"
-              onClick={onVerify}
-              disabled={verifying}
-            >
-              {verifying ? (
-                <><span className="spinner" /> Verifying on Stellar…</>
-              ) : (
-                "Verify on-chain (live)"
-              )}
-            </button>
-          )}
+function Onchain() {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard?.writeText(CONTRACT_ID);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1400);
+  }
+  return (
+    <div className="view">
+      <div className="panel">
+        <div className="panel-head">
+          <h3>Deployed contract</h3>
+          <span className="live-chip">
+            <span className="net-dot" /> testnet
+          </span>
+        </div>
+        <button className="contract-row" onClick={copy}>
+          <span className="mono">{CONTRACT_ID}</span>
+          <span className="copy-ic">{copied ? "✓ copied" : "copy"}</span>
+        </button>
+        <div className="onchain-facts">
+          <Fact k="Proof system" v="Groth16" />
+          <Fact k="Curve" v={CIRCUIT.curve} />
+          <Fact k="Constraints" v={CIRCUIT.constraints.toLocaleString()} />
+          <Fact k="Verifier" v="native pairing_check" />
         </div>
       </div>
 
-      <div className="pv-float pv-float-1 mono">zk-email</div>
-      <div className="pv-float pv-float-2 mono">BN254</div>
-      <div className="pv-float pv-float-3 mono">Soroban</div>
+      <div className="panel">
+        <div className="panel-head">
+          <h3>The verifiable transaction chain</h3>
+          <span className="panel-tag">4 tx · all live</span>
+        </div>
+        <div className="txchain-row">
+          {[
+            { k: "Deploy", h: TX_CHAIN.deploy },
+            { k: "Init", h: TX_CHAIN.init },
+            { k: "Register", h: TX_CHAIN.register },
+            { k: "Prove", h: TX_CHAIN.prove },
+          ].map((t, i) => (
+            <a
+              key={t.k}
+              className="txnode"
+              href={`${EXPLORER}/tx/${t.h}`}
+              target="_blank"
+              rel="noreferrer"
+              style={{ ["--d" as string]: `${i * 70}ms` }}
+            >
+              <span className="txnode-k">{t.k}</span>
+              <span className="txnode-h mono">{short(t.h, 6)}</span>
+              <span className="txnode-go">↗</span>
+            </a>
+          ))}
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-head">
+          <h3>Public journal</h3>
+          <span className="panel-tag">7 signals</span>
+        </div>
+        <div className="journal-grid open">
+          {[
+            ["pubkey_hash", "which provider signed it"],
+            ["sender_hash", "who the issuer is"],
+            ["nullifier", "anti-replay uniqueness"],
+            ["threshold_out", "echo of threshold"],
+            ["timestamp_out", "echo of timestamp"],
+            ["threshold", "reserve floor proven"],
+            ["timestamp", "email date (unix)"],
+          ].map(([name, meaning], i) => (
+            <div className="jrow" key={name}>
+              <span className="jidx mono">{i}</span>
+              <div className="jmain">
+                <b className="mono">{name}</b>
+                <span>{meaning}</span>
+              </div>
+              <span className="jval mono">{short(PUB_SIGNALS[i], 6)}</span>
+            </div>
+          ))}
+        </div>
+        <p className="journal-note">
+          The balance itself is <b>not</b> among these signals — only the
+          threshold it clears.
+        </p>
+      </div>
     </div>
   );
 }
 
+function Fact({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="ofact">
+      <span>{k}</span>
+      <b>{v}</b>
+    </div>
+  );
+}
