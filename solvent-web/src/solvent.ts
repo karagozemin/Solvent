@@ -374,6 +374,11 @@ export interface SubmitResult {
   success: boolean;
   replayRejected: boolean; // true if contract returned Error #7 (nullifier used)
   errorCode: number | null;
+  // True when the guard refused the replay at PREFLIGHT (simulation), before it
+  // ever consumed a ledger slot or a fee. When true, `hash` is a signed-envelope
+  // hash that never lands on-chain, so the UI must NOT link it to the explorer
+  // (it would 404). This is the strongest anti-replay story: rejected for free.
+  preflightRejected: boolean;
 }
 
 // REAL TX: build prove_reserve, have the user SIGN it in Freighter, submit it.
@@ -426,6 +431,11 @@ export async function submitProveReserve(source: string): Promise<SubmitResult> 
     NETWORK_PASSPHRASE,
   );
 
+  // Authoritative hash: derived from the EXACT transaction the user signed in
+  // Freighter, so the linked tx in the UI matches what the wallet displayed
+  // (RPC sent.hash can differ from the signed envelope hash).
+  const signedHash = signedTx.hash().toString("hex");
+
   // Submit the signed transaction. For the demo proof the network rejects the
   // replay; we surface Error #7 (captured at prepare time if present).
   try {
@@ -435,33 +445,112 @@ export async function submitProveReserve(source: string): Promise<SubmitResult> 
         knownReplay ??
         parseContractError(JSON.stringify((sent as any).errorResult ?? sent));
       return {
-        hash: sent.hash,
+        hash: signedHash,
         success: false,
         replayRejected: code === 7,
         errorCode: code,
+        preflightRejected: knownReplay !== null,
       };
     }
     return {
-      hash: sent.hash,
+      hash: signedHash,
       success: true,
       replayRejected: false,
       errorCode: null,
+      preflightRejected: false,
     };
   } catch (e) {
     const code =
       knownReplay ??
       parseContractError(e instanceof Error ? e.message : String(e));
     return {
-      hash: "",
+      hash: signedHash,
       success: false,
       replayRejected: code === 7,
       errorCode: code,
+      preflightRejected: knownReplay !== null,
     };
   }
 }
 
+export interface LandedTx {
+  hash: string;      // real on-chain tx hash, signed by THIS wallet
+  ledger: number;    // ledger it was included in
+  cpuInsns: number;  // on-chain instructions consumed by the pairing check
+}
+
+// THE headline action: the connected juror wallet signs a REAL Soroban
+// invocation of `verify_proof` and we submit it to testnet. Unlike a replay
+// (which the guard rejects at preflight, so it never lands), verify_proof is
+// stateless and returns true — so this transaction is INCLUDED IN A LEDGER and
+// shows up on stellar.expert UNDER THE JUROR'S OWN ADDRESS. Real signer, real
+// on-chain ZK pairing check, real explorer link.
+export async function submitVerifyProof(source: string): Promise<LandedTx> {
+  const server = new Server(RPC_URL);
+  const contract = new Contract(CONTRACT_ID);
+  const acct = await ensureAccount(server, source);
+
+  const tx = new TransactionBuilder(acct, {
+    fee: (Number(BASE_FEE) * 1000).toString(),
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(contract.call("verify_proof", proofScVal(), pubSignalsScVal()))
+    .setTimeout(60)
+    .build();
+
+  // Preflight (attaches the Soroban footprint). verify_proof returns true, so
+  // this succeeds and the tx becomes submittable.
+  const prepared = await server.prepareTransaction(tx);
+
+  const cpuInsns = Number(
+    prepared.toEnvelope().v1().tx().ext().sorobanData().resources().instructions(),
+  );
+
+  // The juror signs the REAL transaction in Freighter.
+  const signed = await signTransaction(prepared.toXDR(), {
+    networkPassphrase: NETWORK_PASSPHRASE,
+    address: source,
+  });
+  if (signed.error) throw new Error(String(signed.error));
+
+  const signedTx = TransactionBuilder.fromXDR(
+    signed.signedTxXdr,
+    NETWORK_PASSPHRASE,
+  );
+  const hash = signedTx.hash().toString("hex");
+
+  const sent = await server.sendTransaction(signedTx as any);
+  if (sent.status === "ERROR") {
+    throw new Error(
+      `submit failed: ${JSON.stringify((sent as any).errorResult ?? sent)}`,
+    );
+  }
+
+  // Poll until the network confirms inclusion, so the returned hash is
+  // guaranteed to resolve on the explorer under the signer's address.
+  let ledger = 0;
+  for (let i = 0; i < 15; i++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    try {
+      const got = await server.getTransaction(hash);
+      if (got.status === "SUCCESS") {
+        ledger = (got as any).ledger ?? 0;
+        break;
+      }
+      if (got.status === "FAILED") {
+        throw new Error("transaction failed on-chain");
+      }
+    } catch {
+      /* NOT_FOUND yet — keep polling */
+    }
+  }
+
+  return { hash, ledger, cpuInsns };
+}
+
 // Extract the contract Error discriminant (e.g. 7 = NullifierUsed) from an RPC
 // simulation error string like "...Error(Contract, #7)...".
+
 function parseContractError(msg: string): number | null {
   const m = msg.match(/#(\d+)/);
   return m ? Number(m[1]) : null;

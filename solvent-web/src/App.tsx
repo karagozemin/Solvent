@@ -8,7 +8,11 @@ import {
   silentAddress,
   verifyProofLive,
   submitProveReserve,
+  submitVerifyProof,
   DEMO_ISSUER,
+  type LandedTx,
+
+
 
   PROVE_TX,
   CONTRACT_ID,
@@ -143,7 +147,10 @@ export default function App() {
   const [verifying, setVerifying] = useState(false);
   const [submit, setSubmit] = useState<SubmitResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [landed, setLanded] = useState<LandedTx | null>(null);
+  const [landing, setLanding] = useState(false);
   const [flowErr, setFlowErr] = useState<string | null>(null);
+
 
   const [faqOpen, setFaqOpen] = useState<number | null>(0);
   const [copied, setCopied] = useState(false);
@@ -239,6 +246,25 @@ export default function App() {
       setSubmitting(false);
     }
   }
+
+  // Sign a REAL verify_proof transaction with the connected wallet and submit
+  // it to testnet. It lands on-chain under the signer's own address, so the
+  // returned hash truly resolves on stellar.expert — the honest, verifiable
+  // "I signed this myself" action.
+  async function onLandProof() {
+    if (!wallet) return;
+    setLanding(true);
+    setFlowErr(null);
+    setLanded(null);
+    try {
+      setLanded(await submitVerifyProof(wallet));
+    } catch (e) {
+      setFlowErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLanding(false);
+    }
+  }
+
 
   useEffect(() => {
     getAttestation(DEMO_ISSUER.senderHashHex)
@@ -582,76 +608,126 @@ export default function App() {
                 )}
               </div>
 
-              {/* card 2 — replay */}
+              {/* card 2 — land a REAL signed tx under YOUR OWN address */}
               <div className="demo-card">
                 <div className="demo-head">
                   <span className="demo-num">2</span>
                   <div>
-                    <b>Attempt a replay</b>
+                    <b>Sign it with your wallet</b>
                     <span>
-                      <code>prove_reserve</code> · you sign · anti-replay
+                      <code>verify_proof</code> · you sign · lands on-chain
                     </span>
                   </div>
                 </div>
                 <p className="demo-body">
-                  Build a real <code>prove_reserve</code> transaction and sign it
-                  with your wallet. This proof's nullifier is already burned on
-                  chain — so the contract must reject the replay with{" "}
-                  <b>Error&nbsp;#7</b>.
+                  Sign a real Soroban transaction in Freighter and broadcast it
+                  to testnet. It's included in a ledger under{" "}
+                  <b>your own address</b> — so the resulting hash truly opens on
+                  Stellar Expert, signed by <span className="mono">{short(wallet, 4)}</span>.
                 </p>
                 <button
-                  className="btn btn-ghost demo-action"
-                  onClick={onSubmit}
-                  disabled={submitting}
+                  className="btn btn-primary demo-action"
+                  onClick={onLandProof}
+                  disabled={landing}
                 >
-                  {submitting ? (
+                  {landing ? (
                     <>
-                      <span className="spinner" /> Submitting…
+                      <span className="spinner" /> Waiting for ledger…
                     </>
                   ) : (
-                    "Sign & submit prove_reserve"
+                    "Sign & broadcast to testnet"
                   )}
                 </button>
 
-                {submit && submit.replayRejected && (
+                {landed && (
                   <div className="result ok">
                     <div className="result-row">
-                      <span>Contract response</span>
+                      <span>You signed</span>
+                      <b className="good">✓ verify_proof</b>
+                    </div>
+                    <div className="result-row">
+                      <span>Included in ledger</span>
+                      <b className="mono">#{landed.ledger.toLocaleString()}</b>
+                    </div>
+                    <div className="result-row">
+                      <span>On-chain instructions</span>
+                      <b className="mono">
+                        {landed.cpuInsns.toLocaleString()}
+                      </b>
+                    </div>
+                    <p className="result-note">
+                      ✅ Confirmed on testnet, signed by your wallet. Open it on
+                      the explorer — it resolves under your own account, no
+                      pre-baked hash.
+                    </p>
+                    <div className="replay-links">
+                      <a
+                        className="tx-link mono"
+                        href={`${EXPLORER}/tx/${landed.hash}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        your tx {short(landed.hash, 8)} ↗
+                      </a>
+                      <a
+                        className="tx-link mono"
+                        href={`${EXPLORER}/account/${wallet}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        your account ↗
+                      </a>
+                    </div>
+                    <div className="replay-note">
+                      <b>🛡️ Now try to double-spend it:</b> the{" "}
+                      <code>prove_reserve</code> path burns a nullifier the first
+                      time. Replaying the same email is rejected with{" "}
+                      <b>Error&nbsp;#7</b> at preflight — no ledger slot, no fee.
+                      <button
+                        className="linkish"
+                        onClick={onSubmit}
+                        disabled={submitting}
+                      >
+                        {submitting ? "checking…" : "run the replay →"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {submit && submit.replayRejected && (
+                  <div className="result ok slim">
+                    <div className="result-row">
+                      <span>Replay of burned email</span>
                       <b className="reject">Error #7 · NullifierUsed</b>
                     </div>
                     <p className="result-note">
-                      🛡️ Anti-replay works — the same email can never mint twice.
-                      Rejected on-chain, before any state change.
+                      Rejected{" "}
+                      {submit.preflightRejected
+                        ? "at preflight — nothing spent"
+                        : "before any state change"}
+                      . The same email can never mint twice.{" "}
+                      <a
+                        className="tx-link mono inline"
+                        href={`${EXPLORER}/tx/${PROVE_TX}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        original prove tx ↗
+                      </a>
                     </p>
                   </div>
                 )}
+
                 {submit && !submit.replayRejected && submit.errorCode && (
-                  <div className="result bad">
+                  <div className="result bad slim">
                     <div className="result-row">
-                      <span>Contract error</span>
+                      <span>Guard error</span>
                       <b className="reject">#{submit.errorCode}</b>
                     </div>
                   </div>
                 )}
-                {submit && submit.hash && (
-                  <div className="result ok">
-                    <div className="result-row">
-                      <span>Submitted</span>
-                      <b className="good">
-                        {submit.success ? "✓ on-chain" : "pending"}
-                      </b>
-                    </div>
-                    <a
-                      className="tx-link mono"
-                      href={`${EXPLORER}/tx/${submit.hash}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {short(submit.hash, 10)} ↗
-                    </a>
-                  </div>
-                )}
               </div>
+
             </div>
           )}
           {flowErr && <p className="inline-err center">{flowErr}</p>}

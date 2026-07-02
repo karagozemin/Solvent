@@ -1366,3 +1366,57 @@
 }
 
 
+
+.replay-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.replay-links .tx-link {
+  margin-top: 0;
+}
+
+/* --- card 2: real landing tx + inline replay --- */
+.result.slim {
+  margin-top: 10px;
+  padding: 12px 14px;
+}
+.replay-note {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.25);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--muted, #94a3b8);
+}
+.replay-note code {
+  font-size: 11.5px;
+}
+.linkish {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: #7dd3fc;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.linkish:hover:not(:disabled) {
+  color: #bae6fd;
+  text-decoration: underline;
+}
+.linkish:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.tx-link.inline {
+  display: inline;
+  padding: 0;
+  border: none;
+  background: none;
+  white-space: nowrap;
+}
