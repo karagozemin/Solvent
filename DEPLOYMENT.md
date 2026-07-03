@@ -32,7 +32,8 @@ Each hash opens at `https://stellar.expert/explorer/testnet/tx/<hash>`.
 - a real Gmail DKIM-signed email produced a Groth16 proof,
 - the contract verified it with Stellar's native BN254 pairing,
 - it **fit under the 100M instruction budget** — the entire point of the
-  Protocol 26 BN254 host functions: on-chain proof-of-reserves is practical,
+  Protocol 25+ BN254 host functions: on-chain proof-of-reserves is practical,
+
 - it emitted `reserve(sender_hash) = { threshold: 1_000_000, timestamp }`,
 - the **balance was never revealed** — only that it clears $1,000,000.
 
