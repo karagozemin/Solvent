@@ -16,7 +16,10 @@
   <img alt="proof system" src="https://img.shields.io/badge/proof-Groth16%20%2F%20BN254-b5361f?style=flat-square">
   <img alt="verifier" src="https://img.shields.io/badge/verifier-native%20pairing__check-9a7b2c?style=flat-square">
   <img alt="tests" src="https://img.shields.io/badge/contract%20tests-8%2F8-1f6b45?style=flat-square">
+  <a href="https://github.com/karagozemin/Solvent/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/karagozemin/Solvent/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/karagozemin/Solvent/releases/tag/v0.1.0"><img alt="reproducible build" src="https://img.shields.io/badge/build-reproducible%20%2B%20SLSA-1f6b45?style=flat-square"></a>
 </p>
+
 
 <p align="center">
   <a href="ARCHITECTURE.md"><b>📐 Architecture (diagrams)</b></a> ·
@@ -30,6 +33,14 @@
 > Provable. Verified on-chain. **The real balance never leaves your machine.**
 
 ---
+
+> **The ZK is load-bearing, not decorative.** Remove the zero-knowledge layer and
+> the product is *physically impossible* — there is no non-ZK way to prove
+> `balance ≥ threshold` from a bank's signed email **without revealing the balance
+> itself**. The proof *is* the attestation; the privacy *is* the product.
+
+---
+
 
 ## What is Solvent?
 
@@ -98,7 +109,28 @@ T"* — backed by the **bank's signature**, not by anyone's word, and revealing
 
 ---
 
+## Solvent vs. the field
+
+Solvent is not another mixer, not another on-chain audit. It proves an **external,
+real-world fact** — a bank balance — while revealing nothing but the floor. Here is
+where it sits against everything adjacent:
+
+| Approach | What it actually proves | The gap Solvent closes |
+|---|---|---|
+| **Privacy pools / mixers** | *hides* amounts of **on-chain** funds | Solvent proves an **off-chain, real-world** fact (bank balance), not on-chain movement |
+| **On-chain PoR (Merkle-sum trees)** | you *hold* some tokens **on-chain** | Solvent proves the **off-chain fiat reserves** that are supposed to back them |
+| **zkKYC / identity proofs** | *who you are* from a signed credential | Solvent proves *how solvent you are* from a signed **balance** — same DKIM trick, financial fact |
+| **Audit PDFs / attestation letters** | a **human** vouches for a number | Solvent trusts the **bank's cryptographic DKIM signature** — no human in the loop |
+| **Oracles / bank API integrations** | a third party *reports* your balance | Solvent needs **no integration** — it consumes an email the bank already sends, and reveals **nothing** |
+
+**The one-line difference:** everyone else either hides on-chain money, trusts a
+human, or leaks the amount. Solvent proves an **off-chain fiat reserve floor**,
+from a signature the bank **already produces**, revealing **only the floor**.
+
+---
+
 ## Real-world fit (PMF)
+
 
 The pain is concrete and the "email you already have" wedge is what makes it
 adoptable — no new bank integration, no oracle, no custody of anyone's funds.
@@ -198,7 +230,43 @@ faked; only the fact that it clears the threshold is ever provable.
 
 ---
 
+## Adversarial testing
+
+Solvent is not validated by a green checkmark — it is validated by **what it
+refuses**. Every attack a malicious prover can mount is enumerated, executed as a
+test, and provably rejected. The suite runs the **real BN254 pairing** natively
+(not a mock), and the replay rejection is additionally proven **on-chain**.
+
+| # | Attack | Adversary's goal | Solvent's response | Where |
+|---|--------|------------------|--------------------|-------|
+| 1 | **Forged / garbage proof** | pass a fabricated Groth16 proof | `pairing_check` → `false`, rejected | `verify_real_proof_true` / `bisect_*` |
+| 2 | **Tampered public signal** | flip `threshold` in the journal, keep the proof | `pairing_check` → `false` (journal is bound into the proof) | `verify_tampered_public_fails` |
+| 3 | **Forged DKIM key** | sign the email with an attacker key | `WrongPubkey` — `pubkey_hash` ≠ pinned gmail key | `prove_reserve_wrong_pubkey_fails` |
+| 4 | **Sender spoofing** | prove from an unregistered/forged issuer | `IssuerNotRegistered` — `sender_hash` ∉ registry | `prove_reserve_unregistered_fails` |
+| 5 | **Replay** | re-submit a valid old proof to double-attest | `NullifierUsed` (`#7`) — nullifier stored on first use | `prove_reserve_replay_fails` |
+| 6 | **G1 negation trap** | exploit base-field `q` vs scalar-field `r` confusion | `A + (-A) = ∞` asserted; negation done over `q` | `bisect_negation_is_identity` |
+| 7 | **Encoding trap** | malformed `vk_x` / IC point encoding | `vk_x ≠ ∞`; EIP-197 / `Bn254Fr` encoding checked | `bisect_vk_x_computes` |
+| 8 | **Happy path (control)** | a genuine reserve above threshold | attestation stored, `reserve` event emitted | `prove_reserve_happy_path` |
+
+**Replay rejection is not just a unit test — it is live on-chain.** Re-submitting
+the winning `prove_reserve` proof to the testnet contract reverts with
+`Error(Contract, #7) = NullifierUsed`, *before* any state change (checks-effects
+order). The nullifier that blocks it was written by the original attestation tx:
+
+| On-chain proof | Tx hash |
+|---|---|
+| **Successful attestation** (`pairing_check = true`) | `32117d2f667119578b4f4e92214662aadb194d03dcd341f61935ad6be18b9c1b` |
+
+> A green "8/8" tells you the code runs. This table tells you **exactly which
+> attacks the code defeats** — and one of them is defeated on a public block
+> explorer, not just in CI.
+
+**Run it yourself:** `cargo test -p mint_guard` → 8/8, real pairing, zero mocks.
+
+---
+
 ## 🟢 Live on Stellar testnet
+
 
 This is not a local test run — it is the chain itself.
 
@@ -330,10 +398,39 @@ DEPLOYMENT.md        live testnet contract + verifiable tx chain
 
 ---
 
+## What's next — the road to mainnet
+
+Solvent's core is live and adversarially tested on testnet. **Mainnet is
+intentionally held until external review** — proof-of-reserves is a security
+product, and shipping it unaudited would betray the entire premise. The path is
+deliberate:
+
+| Milestone | Status | Notes |
+|---|---|---|
+| **Testnet: live + adversarially tested** | ✅ done | contract live, 8/8 attack suite, on-chain replay rejection |
+| **Reproducible build + verified release** | 🔜 next | tagged `v0.1.0` release, Stellar-Expert `soroban-build-workflow` → on-chain **verified** WASM hash + SLSA provenance |
+| **External security audit** | 🎯 planned | the **[SCF Soroban Audit Bank](https://stellar.org/grants-and-funding/soroban-audit-bank)** is the intended path — audit-grade review before any real value flows |
+| **Multi-party trusted-setup ceremony** | 🗺️ roadmap | replace the single-contributor dev ceremony with a real Powers-of-Tau + phase-2 MPC |
+| **Client-side WASM proving** | 🗺️ roadmap | move RSA-2048-in-circuit proving into the browser so the email *never* leaves the user's machine |
+| **Mainnet** | ⛔ gated | held until audit clears — solvency proofs must not ship unreviewed |
+
+**Why this matters for the ecosystem:** Solvent is built to sit in the Stellar
+**mainnet → audit → grant** orbit, not to stop at a demo. A verified, reproducible
+release plus an SCF-audited contract is what turns a hackathon proof-of-concept
+into something an exchange or fund can actually rely on.
+
+> **Reproducibility today:** the contract WASM is ~10 KB and built from source with
+> `stellar contract build`; a tagged release with Stellar-Expert's
+> `soroban-build-workflow` yields a **reproducible build + verified badge** so
+> anyone can confirm the deployed bytecode matches this repo — no trust required.
+
+---
+
 ## Honesty notes
 
 - **Trusted setup is a single-contributor dev ceremony.** Production needs a real
   multi-party Powers-of-Tau + phase-2 ceremony.
+
 - **Gmail as a stand-in issuer:** because `gmail.com` is a shared domain, the
   circuit binds the **full From address**, not just the domain. A dedicated-domain
   issuer (e.g. `chase.com`) could bind at the domain level.

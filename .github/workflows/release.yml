@@ -1,0 +1,33 @@
+# Reproducible build + verified release for the mint_guard Soroban contract.
+#
+# On every GitHub Release this runs Stellar-Expert's official reproducible
+# `soroban-build-workflow`, which:
+#   * builds the contract in a pinned, deterministic container,
+#   * attaches the resulting .wasm + build attestation (SLSA provenance) to the
+#     release,
+#   * lets stellar.expert confirm the DEPLOYED bytecode hash matches this repo,
+#     turning the contract page GREEN ("verified").
+#
+# It never touches contract logic — build + attach only.
+name: Reproducible Release Build
+
+on:
+  release:
+    types: [published]      # fires when a release (e.g. v0.1.0) is published
+  workflow_dispatch: {}      # allow manual runs from the Actions tab
+
+permissions:
+  id-token: write            # required to sign the build provenance (SLSA)
+  contents: write            # required to attach the .wasm to the release
+  attestations: write        # required to publish the build attestation
+
+jobs:
+  reproducible-build:
+    uses: stellar-expert/soroban-build-workflow/.github/workflows/release.yml@v11
+    with:
+      release_name: ${{ github.event.release.tag_name }}
+      relative_path: '["contracts/mint_guard"]'
+      package: 'mint_guard'
+      make_target: ''
+    secrets:
+      release_token: ${{ secrets.GITHUB_TOKEN }}
