@@ -284,6 +284,20 @@ a real Gmail DKIM email → Groth16 proof → on-chain `pairing_check = true`,
 
 **Every step has a verifiable tx hash → [DEPLOYMENT.md](DEPLOYMENT.md).**
 
+### Verified & reproducible build
+
+Contracts build reproducibly in Stellar-Expert's official CI container —
+anyone can confirm the on-chain WASM came from this exact source, no trust
+required. Release v0.1.0 ships the WASM + SHA-256 with an SLSA provenance
+attestation (in-toto / slsa.dev v1).
+
+- WASM: `mint_guard_v0.1.0.wasm`
+- sha256: `a411faa3674800b9d187c47652ff492771d04ac45172a47ef90774be5f6ce37b`
+- Release: [github.com/karagozemin/Solvent/releases/tag/v0.1.0](https://github.com/karagozemin/Solvent/releases/tag/v0.1.0)
+
+The hash of the released WASM matches the CI-built hash byte-for-byte —
+deployed bytecode is verifiable against source.
+
 ---
 
 ## How it works
@@ -376,6 +390,7 @@ cd solvent-web && npm install && npm run dev
 | **WASM build + testnet deploy** | ✅ **LIVE** |
 | `pairing_check` under 100M budget | ✅ verified on testnet |
 | Replay rejection + attestation, live | ✅ |
+| Reproducible build + SLSA provenance (verified release) | ✅ v0.1.0 |
 
 ---
 
@@ -408,7 +423,7 @@ deliberate:
 | Milestone | Status | Notes |
 |---|---|---|
 | **Testnet: live + adversarially tested** | ✅ done | contract live, 8/8 attack suite, on-chain replay rejection |
-| **Reproducible build + verified release** | 🔜 next | tagged `v0.1.0` release, Stellar-Expert `soroban-build-workflow` → on-chain **verified** WASM hash + SLSA provenance |
+| **Reproducible build + verified release** | ✅ done | `v0.1.0` built by Stellar-Expert `soroban-build-workflow` → WASM `a411faa3…` + SLSA provenance attestation (see [Verified & reproducible build](#verified--reproducible-build)) |
 | **External security audit** | 🎯 planned | the **[SCF Soroban Audit Bank](https://stellar.org/grants-and-funding/soroban-audit-bank)** is the intended path — audit-grade review before any real value flows |
 | **Multi-party trusted-setup ceremony** | 🗺️ roadmap | replace the single-contributor dev ceremony with a real Powers-of-Tau + phase-2 MPC |
 | **Client-side WASM proving** | 🗺️ roadmap | move RSA-2048-in-circuit proving into the browser so the email *never* leaves the user's machine |
@@ -419,10 +434,10 @@ deliberate:
 release plus an SCF-audited contract is what turns a hackathon proof-of-concept
 into something an exchange or fund can actually rely on.
 
-> **Reproducibility today:** the contract WASM is ~10 KB and built from source with
-> `stellar contract build`; a tagged release with Stellar-Expert's
-> `soroban-build-workflow` yields a **reproducible build + verified badge** so
-> anyone can confirm the deployed bytecode matches this repo — no trust required.
+> **Reproducibility today:** the `v0.1.0` release is built from source by
+> Stellar-Expert's `soroban-build-workflow` and ships the ~10 KB WASM
+> (`sha256 a411faa3…`) with an **SLSA provenance attestation** — anyone can
+> confirm the deployed bytecode matches this repo, no trust required.
 
 ---
 
