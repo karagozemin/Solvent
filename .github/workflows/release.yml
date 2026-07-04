@@ -23,11 +23,10 @@ permissions:
 
 jobs:
   reproducible-build:
-    uses: stellar-expert/soroban-build-workflow/.github/workflows/release.yml@v11
+    uses: stellar-expert/soroban-build-workflow/.github/workflows/release.yml@v25.1.0
     with:
       release_name: ${{ github.event.release.tag_name }}
-      relative_path: '["contracts/mint_guard"]'
+      relative_path: 'contracts/mint_guard'
       package: 'mint_guard'
-      make_target: ''
     secrets:
       release_token: ${{ secrets.GITHUB_TOKEN }}
